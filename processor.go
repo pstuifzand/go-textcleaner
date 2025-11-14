@@ -121,6 +121,8 @@ func replaceText(input, arg1, arg2 string) string {
 	if arg1 == "" {
 		return input
 	}
+	arg1 = processEscapeSequences(arg1)
+	arg2 = processEscapeSequences(arg2)
 	return strings.ReplaceAll(input, arg1, arg2)
 }
 
@@ -136,6 +138,7 @@ func addPrefix(input, arg1, arg2 string) string {
 	if arg1 == "" {
 		return input
 	}
+	arg1 = processEscapeSequences(arg1)
 	return arg1 + input
 }
 
@@ -143,6 +146,7 @@ func addSuffix(input, arg1, arg2 string) string {
 	if arg1 == "" {
 		return input
 	}
+	arg1 = processEscapeSequences(arg1)
 	return input + arg1
 }
 
@@ -150,6 +154,7 @@ func removePrefix(input, arg1, arg2 string) string {
 	if arg1 == "" {
 		return input
 	}
+	arg1 = processEscapeSequences(arg1)
 	return strings.TrimPrefix(input, arg1)
 }
 
@@ -157,6 +162,7 @@ func removeSuffix(input, arg1, arg2 string) string {
 	if arg1 == "" {
 		return input
 	}
+	arg1 = processEscapeSequences(arg1)
 	return strings.TrimSuffix(input, arg1)
 }
 
@@ -212,6 +218,8 @@ func midCharacters(input, arg1, arg2 string) string {
 
 // surroundText wraps text with prefix and suffix
 func surroundText(input, arg1, arg2 string) string {
+	arg1 = processEscapeSequences(arg1)
+	arg2 = processEscapeSequences(arg2)
 	return arg1 + input + arg2
 }
 
@@ -221,6 +229,8 @@ func splitFormat(input, arg1, arg2 string) string {
 		return input
 	}
 
+	arg1 = processEscapeSequences(arg1)
+	arg2 = processEscapeSequences(arg2)
 	parts := strings.Split(input, arg1)
 
 	// Convert parts to interface{} slice for fmt.Sprintf
@@ -343,9 +353,8 @@ func replaceFull(input, arg1, arg2 string) string {
 		return input
 	}
 
-	// Normalize line breaks in replacement string
-	replacement := strings.ReplaceAll(arg2, "\\n", "\n")
-	replacement = strings.ReplaceAll(replacement, "\\r\\n", "\n")
+	// Process escape sequences in replacement string
+	replacement := processEscapeSequences(arg2)
 
 	return re.ReplaceAllString(input, replacement)
 }
@@ -356,6 +365,9 @@ func findHtmlLinks(input, arg1, arg2 string) string {
 	if err != nil {
 		return input
 	}
+
+	// Process escape sequences in format string
+	arg1 = processEscapeSequences(arg1)
 
 	var result strings.Builder
 	doc.Find("a[href]").Each(func(i int, s *goquery.Selection) {
@@ -512,6 +524,91 @@ func calculate(input, arg1, arg2 string) string {
 }
 
 // Helper functions
+
+// processEscapeSequences converts escape sequences in a string
+// Handles: \n, \r, \t, \f, \v, \b, \a, \\, and \xHH hex escapes
+func processEscapeSequences(s string) string {
+	var result strings.Builder
+	runes := []rune(s)
+
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '\\' && i+1 < len(runes) {
+			nextChar := runes[i+1]
+			switch nextChar {
+			case 'n':
+				result.WriteRune('\n')
+				i++
+			case 'r':
+				result.WriteRune('\r')
+				i++
+			case 't':
+				result.WriteRune('\t')
+				i++
+			case 'f':
+				result.WriteRune('\f')
+				i++
+			case 'v':
+				result.WriteRune('\v')
+				i++
+			case 'b':
+				result.WriteRune('\b')
+				i++
+			case 'a':
+				result.WriteRune('\a')
+				i++
+			case '\\':
+				result.WriteRune('\\')
+				i++
+			case 'x':
+				// Handle \xHH hex escape
+				if i+3 < len(runes) {
+					hexStr := string(runes[i+2 : i+4])
+					if val, err := strconv.ParseInt(hexStr, 16, 8); err == nil {
+						result.WriteRune(rune(val))
+						i += 3
+					} else {
+						result.WriteRune(runes[i])
+					}
+				} else {
+					result.WriteRune(runes[i])
+				}
+			case 'u':
+				// Handle \uHHHH unicode escape
+				if i+5 < len(runes) {
+					hexStr := string(runes[i+2 : i+6])
+					if val, err := strconv.ParseInt(hexStr, 16, 32); err == nil {
+						result.WriteRune(rune(val))
+						i += 5
+					} else {
+						result.WriteRune(runes[i])
+					}
+				} else {
+					result.WriteRune(runes[i])
+				}
+			case 'U':
+				// Handle \UHHHHHHHH unicode escape
+				if i+9 < len(runes) {
+					hexStr := string(runes[i+2 : i+10])
+					if val, err := strconv.ParseInt(hexStr, 16, 32); err == nil {
+						result.WriteRune(rune(val))
+						i += 9
+					} else {
+						result.WriteRune(runes[i])
+					}
+				} else {
+					result.WriteRune(runes[i])
+				}
+			default:
+				// Not a recognized escape sequence, keep the backslash
+				result.WriteRune(runes[i])
+			}
+		} else {
+			result.WriteRune(runes[i])
+		}
+	}
+
+	return result.String()
+}
 
 // parseRegexFlags parses regex flag string (e.g., "ims")
 func parseRegexFlags(flags string) map[rune]bool {
