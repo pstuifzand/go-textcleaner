@@ -73,8 +73,18 @@ func (tc *TextCleaner) BuildUI() {
 	mainBox.SetMarginStart(5)
 	mainBox.SetMarginEnd(5)
 
-	// Create toolbar area
-	toolbar := tc.createToolbar()
+	// Create toolbar area with just copy button
+	toolbar, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
+	// Spacer
+	spacer, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 0)
+	toolbar.PackStart(spacer, true, true, 0)
+
+	// Copy button
+	copyButton, _ := gtk.ButtonNewWithLabel("Copy to Clipboard")
+	tc.copyButton = copyButton
+	toolbar.PackStart(copyButton, false, false, 0)
+
 	mainBox.PackStart(toolbar, false, false, 0)
 
 	// Create main horizontal paned (pipeline panel | text panes)
@@ -108,74 +118,81 @@ func (tc *TextCleaner) BuildUI() {
 	tc.setupEventHandlers()
 }
 
-func (tc *TextCleaner) createToolbar() *gtk.Box {
-	toolbar, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+func (tc *TextCleaner) createOperationControls() *gtk.Box {
+	controlsBox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+	controlsBox.SetMarginTop(10)
+	controlsBox.SetMarginBottom(10)
+	controlsBox.SetMarginStart(10)
+	controlsBox.SetMarginEnd(10)
 
-	// Operation label
-	label, _ := gtk.LabelNew("Operation:")
-	toolbar.PackStart(label, false, false, 0)
+	// Operation row
+	opRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	opLabel, _ := gtk.LabelNew("Operation:")
+	opLabel.SetXAlign(0)
+	opRow.PackStart(opLabel, false, false, 0)
 
-	// Operation combo box
 	operationBox, _ := gtk.ComboBoxTextNew()
 	tc.operationBox = operationBox
-
-	// Add all available operations
 	operations := GetOperations()
 	for _, op := range operations {
 		operationBox.AppendText(op.Name)
 	}
 	operationBox.SetActive(0)
+	opRow.PackStart(operationBox, true, true, 0)
+	controlsBox.PackStart(opRow, false, false, 0)
 
-	toolbar.PackStart(operationBox, false, false, 0)
-
-	// Argument 1
+	// Argument 1 row
+	arg1Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg1Label, _ := gtk.LabelNew("Arg1:")
-	toolbar.PackStart(arg1Label, false, false, 0)
+	arg1Label.SetXAlign(0)
+	arg1Label.SetWidthChars(9)
+	arg1Row.PackStart(arg1Label, false, false, 0)
 
 	arg1Entry, _ := gtk.EntryNew()
 	tc.argument1 = arg1Entry
-	arg1Entry.SetWidthChars(20)
-	toolbar.PackStart(arg1Entry, false, false, 0)
+	arg1Row.PackStart(arg1Entry, true, true, 0)
+	controlsBox.PackStart(arg1Row, false, false, 0)
 
-	// Argument 2
+	// Argument 2 row
+	arg2Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg2Label, _ := gtk.LabelNew("Arg2:")
-	toolbar.PackStart(arg2Label, false, false, 0)
+	arg2Label.SetXAlign(0)
+	arg2Label.SetWidthChars(9)
+	arg2Row.PackStart(arg2Label, false, false, 0)
 
 	arg2Entry, _ := gtk.EntryNew()
 	tc.argument2 = arg2Entry
-	arg2Entry.SetWidthChars(20)
-	toolbar.PackStart(arg2Entry, false, false, 0)
+	arg2Row.PackStart(arg2Entry, true, true, 0)
+	controlsBox.PackStart(arg2Row, false, false, 0)
 
 	// Line-based checkbox
 	lineBasedCheckbox, _ := gtk.CheckButtonNewWithLabel("Line-based")
 	tc.lineBasedCheckbox = lineBasedCheckbox
-	toolbar.PackStart(lineBasedCheckbox, false, false, 0)
+	controlsBox.PackStart(lineBasedCheckbox, false, false, 0)
 
-	// Add to Pipeline button
+	// Buttons row
+	buttonRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
 	addButton, _ := gtk.ButtonNewWithLabel("Add to Pipeline")
 	tc.addButton = addButton
-	toolbar.PackStart(addButton, false, false, 0)
+	buttonRow.PackStart(addButton, true, true, 0)
 
-	// Update button (hidden/shown based on selection)
 	updateButton, _ := gtk.ButtonNewWithLabel("Update Selected")
 	tc.updateButton = updateButton
 	updateButton.SetSensitive(false)
-	toolbar.PackStart(updateButton, false, false, 0)
+	buttonRow.PackStart(updateButton, true, true, 0)
 
-	// Spacer
-	spacer, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 0)
-	toolbar.PackStart(spacer, true, true, 0)
+	controlsBox.PackStart(buttonRow, false, false, 0)
 
-	// Copy button
-	copyButton, _ := gtk.ButtonNewWithLabel("Copy to Clipboard")
-	tc.copyButton = copyButton
-	toolbar.PackStart(copyButton, false, false, 0)
-
-	return toolbar
+	return controlsBox
 }
 
 func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	panel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+
+	// Add operation controls at the top
+	operationControls := tc.createOperationControls()
+	panel.PackStart(operationControls, false, false, 0)
 
 	// Title label
 	titleLabel, _ := gtk.LabelNew("Operations Pipeline")
