@@ -33,15 +33,40 @@ func GetOperations() []Operation {
 
 // ProcessText processes the input text with the given operation and arguments
 func ProcessText(input string, operationName string, arg1, arg2 string) string {
+	return ProcessTextWithMode(input, operationName, arg1, arg2, false)
+}
+
+// ProcessTextWithMode processes the input text with the given operation, arguments, and mode
+// If lineBased is true, the operation is applied to each line individually
+func ProcessTextWithMode(input string, operationName string, arg1, arg2 string, lineBased bool) string {
 	operations := GetOperations()
 
 	for _, op := range operations {
 		if op.Name == operationName {
+			if lineBased {
+				return applyLineBased(op.Func, input, arg1, arg2)
+			}
 			return op.Func(input, arg1, arg2)
 		}
 	}
 
 	return input
+}
+
+// applyLineBased applies an operation to each line of the input text individually
+func applyLineBased(opFunc func(input, arg1, arg2 string) string, input string, arg1, arg2 string) string {
+	if input == "" {
+		return input
+	}
+
+	lines := strings.Split(input, "\n")
+	result := make([]string, len(lines))
+
+	for i, line := range lines {
+		result[i] = opFunc(line, arg1, arg2)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // Operation implementations

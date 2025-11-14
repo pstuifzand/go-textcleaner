@@ -15,29 +15,31 @@ const (
 
 // PipelineOperation represents a single operation in the processing pipeline
 type PipelineOperation struct {
-	Name string
-	Arg1 string
-	Arg2 string
+	Name      string
+	Arg1      string
+	Arg2      string
+	LineBased bool // If true, operation is applied to each line individually
 }
 
 type TextCleaner struct {
-	window           *gtk.Window
-	inputView        *gtk.TextView
-	outputView       *gtk.TextView
-	inputBuffer      *gtk.TextBuffer
-	outputBuffer     *gtk.TextBuffer
-	operationBox     *gtk.ComboBoxText
-	argument1        *gtk.Entry
-	argument2        *gtk.Entry
-	copyButton       *gtk.Button
-	pipeline         []PipelineOperation
-	pipelineListBox  *gtk.ListBox
-	addButton        *gtk.Button
-	updateButton     *gtk.Button
-	removeButton     *gtk.Button
-	moveUpButton     *gtk.Button
-	moveDownButton   *gtk.Button
-	selectedPipeline int // -1 means no selection
+	window            *gtk.Window
+	inputView         *gtk.TextView
+	outputView        *gtk.TextView
+	inputBuffer       *gtk.TextBuffer
+	outputBuffer      *gtk.TextBuffer
+	operationBox      *gtk.ComboBoxText
+	argument1         *gtk.Entry
+	argument2         *gtk.Entry
+	lineBasedCheckbox *gtk.CheckButton
+	copyButton        *gtk.Button
+	pipeline          []PipelineOperation
+	pipelineListBox   *gtk.ListBox
+	addButton         *gtk.Button
+	updateButton      *gtk.Button
+	removeButton      *gtk.Button
+	moveUpButton      *gtk.Button
+	moveDownButton    *gtk.Button
+	selectedPipeline  int // -1 means no selection
 }
 
 func main() {
@@ -143,6 +145,11 @@ func (tc *TextCleaner) createToolbar() *gtk.Box {
 	tc.argument2 = arg2Entry
 	arg2Entry.SetWidthChars(20)
 	toolbar.PackStart(arg2Entry, false, false, 0)
+
+	// Line-based checkbox
+	lineBasedCheckbox, _ := gtk.CheckButtonNewWithLabel("Line-based")
+	tc.lineBasedCheckbox = lineBasedCheckbox
+	toolbar.PackStart(lineBasedCheckbox, false, false, 0)
 
 	// Add to Pipeline button
 	addButton, _ := gtk.ButtonNewWithLabel("Add to Pipeline")
@@ -300,7 +307,7 @@ func (tc *TextCleaner) processText() {
 	// Process through pipeline
 	output := input
 	for _, pipeOp := range tc.pipeline {
-		output = ProcessText(output, pipeOp.Name, pipeOp.Arg1, pipeOp.Arg2)
+		output = ProcessTextWithMode(output, pipeOp.Name, pipeOp.Arg1, pipeOp.Arg2, pipeOp.LineBased)
 	}
 
 	// Update output buffer
@@ -326,20 +333,23 @@ func (tc *TextCleaner) addToPipeline() {
 	operationName := tc.operationBox.GetActiveText()
 	arg1, _ := tc.argument1.GetText()
 	arg2, _ := tc.argument2.GetText()
+	lineBased := tc.lineBasedCheckbox.GetActive()
 
 	pipeOp := PipelineOperation{
-		Name: operationName,
-		Arg1: arg1,
-		Arg2: arg2,
+		Name:      operationName,
+		Arg1:      arg1,
+		Arg2:      arg2,
+		LineBased: lineBased,
 	}
 
 	tc.pipeline = append(tc.pipeline, pipeOp)
 	tc.refreshPipelineList()
 	tc.processText()
 
-	// Clear arguments for next operation
+	// Clear arguments and checkbox for next operation
 	tc.argument1.SetText("")
 	tc.argument2.SetText("")
+	tc.lineBasedCheckbox.SetActive(false)
 }
 
 // removeFromPipeline removes the selected operation from the pipeline
@@ -400,6 +410,9 @@ func (tc *TextCleaner) refreshPipelineList() {
 				label += ", " + pipeOp.Arg2
 			}
 			label += ")"
+		}
+		if pipeOp.LineBased {
+			label += " [Line-based]"
 		}
 
 		row, _ := gtk.LabelNew(label)
@@ -467,6 +480,7 @@ func (tc *TextCleaner) loadOperationForEdit() {
 	// Set the arguments
 	tc.argument1.SetText(pipeOp.Arg1)
 	tc.argument2.SetText(pipeOp.Arg2)
+	tc.lineBasedCheckbox.SetActive(pipeOp.LineBased)
 }
 
 // updateSelectedOperation updates the selected operation with current toolbar values
@@ -478,17 +492,20 @@ func (tc *TextCleaner) updateSelectedOperation() {
 	operationName := tc.operationBox.GetActiveText()
 	arg1, _ := tc.argument1.GetText()
 	arg2, _ := tc.argument2.GetText()
+	lineBased := tc.lineBasedCheckbox.GetActive()
 
 	tc.pipeline[tc.selectedPipeline] = PipelineOperation{
-		Name: operationName,
-		Arg1: arg1,
-		Arg2: arg2,
+		Name:      operationName,
+		Arg1:      arg1,
+		Arg2:      arg2,
+		LineBased: lineBased,
 	}
 
 	tc.refreshPipelineList()
 	tc.processText()
 
-	// Clear arguments
+	// Clear arguments and checkbox
 	tc.argument1.SetText("")
 	tc.argument2.SetText("")
+	tc.lineBasedCheckbox.SetActive(false)
 }
