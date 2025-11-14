@@ -320,13 +320,26 @@ func (tc *TextCleaner) setupEventHandlers() {
 
 // processText processes the input text through the pipeline and updates output
 func (tc *TextCleaner) processText() {
+	tc.processTextUpTo(-1) // Process full pipeline
+}
+
+// processTextUpTo processes input through operations up to (and including) the specified index
+// If upToIndex is -1, processes through the entire pipeline
+func (tc *TextCleaner) processTextUpTo(upToIndex int) {
 	// Get input text
 	startIter, endIter := tc.inputBuffer.GetBounds()
 	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
 
+	// Determine how many operations to process
+	operationsToProcess := len(tc.pipeline)
+	if upToIndex >= 0 && upToIndex < len(tc.pipeline) {
+		operationsToProcess = upToIndex + 1
+	}
+
 	// Process through pipeline
 	output := input
-	for _, pipeOp := range tc.pipeline {
+	for i := 0; i < operationsToProcess; i++ {
+		pipeOp := tc.pipeline[i]
 		output = ProcessTextWithMode(output, pipeOp.Name, pipeOp.Arg1, pipeOp.Arg2, pipeOp.LineBased)
 	}
 
@@ -456,7 +469,7 @@ func (tc *TextCleaner) refreshPipelineList() {
 	tc.updateButtonStates()
 }
 
-// updatePipelineSelection updates the selected pipeline index
+// updatePipelineSelection updates the selected pipeline index and displays intermediate output
 func (tc *TextCleaner) updatePipelineSelection() {
 	selectedRow := tc.pipelineListBox.GetSelectedRow()
 	if selectedRow != nil {
@@ -465,6 +478,8 @@ func (tc *TextCleaner) updatePipelineSelection() {
 		tc.selectedPipeline = -1
 	}
 	tc.updateButtonStates()
+	// Update output to show result up to selected operation
+	tc.processTextUpTo(tc.selectedPipeline)
 }
 
 // updateButtonStates updates the enabled/disabled state of pipeline buttons
