@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 )
 
@@ -13,15 +14,15 @@ const (
 )
 
 type TextCleaner struct {
-	window        *gtk.Window
-	inputView     *gtk.TextView
-	outputView    *gtk.TextView
-	inputBuffer   *gtk.TextBuffer
-	outputBuffer  *gtk.TextBuffer
-	operationBox  *gtk.ComboBoxText
-	argument1     *gtk.Entry
-	argument2     *gtk.Entry
-	copyButton    *gtk.Button
+	window       *gtk.Window
+	inputView    *gtk.TextView
+	outputView   *gtk.TextView
+	inputBuffer  *gtk.TextBuffer
+	outputBuffer *gtk.TextBuffer
+	operationBox *gtk.ComboBoxText
+	argument1    *gtk.Entry
+	argument2    *gtk.Entry
+	copyButton   *gtk.Button
 }
 
 func main() {
@@ -73,6 +74,9 @@ func (tc *TextCleaner) BuildUI() {
 
 	tc.window.Add(mainBox)
 	tc.window.ShowAll()
+
+	// Wire up event handlers for real-time processing
+	tc.setupEventHandlers()
 }
 
 func (tc *TextCleaner) createToolbar() *gtk.Box {
@@ -86,19 +90,10 @@ func (tc *TextCleaner) createToolbar() *gtk.Box {
 	operationBox, _ := gtk.ComboBoxTextNew()
 	tc.operationBox = operationBox
 
-	// Add placeholder operations (we'll add real ones later)
-	operations := []string{
-		"Uppercase",
-		"Lowercase",
-		"Titlecase",
-		"Trim",
-		"Replace Text",
-		"HTML Decode",
-		"HTML Encode",
-	}
-
+	// Add all available operations
+	operations := GetOperations()
 	for _, op := range operations {
-		operationBox.AppendText(op)
+		operationBox.AppendText(op.Name)
 	}
 	operationBox.SetActive(0)
 
@@ -161,4 +156,66 @@ func (tc *TextCleaner) createTextPane(title string, isInput bool) *gtk.Frame {
 	frame.Add(scrolledWindow)
 
 	return frame
+}
+
+// setupEventHandlers wires up all event handlers for real-time processing
+func (tc *TextCleaner) setupEventHandlers() {
+	// Input buffer changed - process text in real-time
+	tc.inputBuffer.Connect("changed", func() {
+		tc.processText()
+	})
+
+	// Argument 1 changed - reprocess
+	tc.argument1.Connect("changed", func() {
+		tc.processText()
+	})
+
+	// Argument 2 changed - reprocess
+	tc.argument2.Connect("changed", func() {
+		tc.processText()
+	})
+
+	// Operation changed - reprocess
+	tc.operationBox.Connect("changed", func() {
+		tc.processText()
+	})
+
+	// Copy button - copy output to clipboard
+	tc.copyButton.Connect("clicked", func() {
+		tc.copyToClipboard()
+	})
+}
+
+// processText processes the input text with the selected operation and updates output
+func (tc *TextCleaner) processText() {
+	// Get input text
+	startIter, endIter := tc.inputBuffer.GetBounds()
+	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
+
+	// Get selected operation
+	operationName := tc.operationBox.GetActiveText()
+
+	// Get arguments
+	arg1, _ := tc.argument1.GetText()
+	arg2, _ := tc.argument2.GetText()
+
+	// Process the text
+	output := ProcessText(input, operationName, arg1, arg2)
+
+	// Update output buffer
+	tc.outputBuffer.SetText(output)
+}
+
+// copyToClipboard copies the output text to clipboard
+func (tc *TextCleaner) copyToClipboard() {
+	clipboard, err := gtk.ClipboardGet(gdk.GdkAtomIntern("CLIPBOARD", true))
+	if err != nil {
+		log.Println("Failed to get clipboard:", err)
+		return
+	}
+
+	startIter, endIter := tc.outputBuffer.GetBounds()
+	text, _ := tc.outputBuffer.GetText(startIter, endIter, true)
+
+	clipboard.SetText(text)
 }
