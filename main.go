@@ -13,22 +13,39 @@ const (
 	appHeight = 600
 )
 
+// PipelineOperation represents a single operation in the processing pipeline
+type PipelineOperation struct {
+	Name string
+	Arg1 string
+	Arg2 string
+}
+
 type TextCleaner struct {
-	window       *gtk.Window
-	inputView    *gtk.TextView
-	outputView   *gtk.TextView
-	inputBuffer  *gtk.TextBuffer
-	outputBuffer *gtk.TextBuffer
-	operationBox *gtk.ComboBoxText
-	argument1    *gtk.Entry
-	argument2    *gtk.Entry
-	copyButton   *gtk.Button
+	window           *gtk.Window
+	inputView        *gtk.TextView
+	outputView       *gtk.TextView
+	inputBuffer      *gtk.TextBuffer
+	outputBuffer     *gtk.TextBuffer
+	operationBox     *gtk.ComboBoxText
+	argument1        *gtk.Entry
+	argument2        *gtk.Entry
+	copyButton       *gtk.Button
+	pipeline         []PipelineOperation
+	pipelineListBox  *gtk.ListBox
+	addButton        *gtk.Button
+	updateButton     *gtk.Button
+	removeButton     *gtk.Button
+	moveUpButton     *gtk.Button
+	moveDownButton   *gtk.Button
+	selectedPipeline int // -1 means no selection
 }
 
 func main() {
 	gtk.Init(nil)
 
 	app := &TextCleaner{}
+	app.selectedPipeline = -1 // Initialize with no selection
+	app.pipeline = []PipelineOperation{}
 	app.BuildUI()
 
 	gtk.Main()
@@ -58,19 +75,29 @@ func (tc *TextCleaner) BuildUI() {
 	toolbar := tc.createToolbar()
 	mainBox.PackStart(toolbar, false, false, 0)
 
-	// Create horizontal paned for input/output
-	paned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
-	paned.SetPosition(appWidth / 2)
+	// Create main horizontal paned (pipeline panel | text panes)
+	mainPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
+	mainPaned.SetPosition(250) // Pipeline panel width
 
-	// Create input pane (left side)
+	// Create pipeline panel (left side)
+	pipelinePanel := tc.createPipelinePanel()
+	mainPaned.Add1(pipelinePanel)
+
+	// Create horizontal paned for input/output (right side)
+	textPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
+	textPaned.SetPosition((appWidth - 250) / 2)
+
+	// Create input pane
 	inputFrame := tc.createTextPane("Input", true)
-	paned.Add1(inputFrame)
+	textPaned.Add1(inputFrame)
 
-	// Create output pane (right side)
+	// Create output pane
 	outputFrame := tc.createTextPane("Output", false)
-	paned.Add2(outputFrame)
+	textPaned.Add2(outputFrame)
 
-	mainBox.PackStart(paned, true, true, 0)
+	mainPaned.Add2(textPaned)
+
+	mainBox.PackStart(mainPaned, true, true, 0)
 
 	tc.window.Add(mainBox)
 	tc.window.ShowAll()
@@ -117,6 +144,17 @@ func (tc *TextCleaner) createToolbar() *gtk.Box {
 	arg2Entry.SetWidthChars(20)
 	toolbar.PackStart(arg2Entry, false, false, 0)
 
+	// Add to Pipeline button
+	addButton, _ := gtk.ButtonNewWithLabel("Add to Pipeline")
+	tc.addButton = addButton
+	toolbar.PackStart(addButton, false, false, 0)
+
+	// Update button (hidden/shown based on selection)
+	updateButton, _ := gtk.ButtonNewWithLabel("Update Selected")
+	tc.updateButton = updateButton
+	updateButton.SetSensitive(false)
+	toolbar.PackStart(updateButton, false, false, 0)
+
 	// Spacer
 	spacer, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 0)
 	toolbar.PackStart(spacer, true, true, 0)
@@ -127,6 +165,53 @@ func (tc *TextCleaner) createToolbar() *gtk.Box {
 	toolbar.PackStart(copyButton, false, false, 0)
 
 	return toolbar
+}
+
+func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
+	panel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+
+	// Title label
+	titleLabel, _ := gtk.LabelNew("Operations Pipeline")
+	titleLabel.SetMarkup("<b>Operations Pipeline</b>")
+	panel.PackStart(titleLabel, false, false, 5)
+
+	// Scrolled window for the list
+	scrolledWindow, _ := gtk.ScrolledWindowNew(nil, nil)
+	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	scrolledWindow.SetSizeRequest(200, -1)
+
+	// ListBox for operations
+	listBox, _ := gtk.ListBoxNew()
+	tc.pipelineListBox = listBox
+	listBox.SetSelectionMode(gtk.SELECTION_SINGLE)
+
+	scrolledWindow.Add(listBox)
+	panel.PackStart(scrolledWindow, true, true, 0)
+
+	// Button box for controls
+	buttonBox, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
+	// Remove button
+	removeButton, _ := gtk.ButtonNewWithLabel("Remove")
+	tc.removeButton = removeButton
+	removeButton.SetSensitive(false)
+	buttonBox.PackStart(removeButton, true, true, 0)
+
+	// Move Up button
+	moveUpButton, _ := gtk.ButtonNewWithLabel("Move Up")
+	tc.moveUpButton = moveUpButton
+	moveUpButton.SetSensitive(false)
+	buttonBox.PackStart(moveUpButton, true, true, 0)
+
+	// Move Down button
+	moveDownButton, _ := gtk.ButtonNewWithLabel("Move Down")
+	tc.moveDownButton = moveDownButton
+	moveDownButton.SetSensitive(false)
+	buttonBox.PackStart(moveDownButton, true, true, 0)
+
+	panel.PackStart(buttonBox, false, false, 0)
+
+	return panel
 }
 
 func (tc *TextCleaner) createTextPane(title string, isInput bool) *gtk.Frame {
@@ -165,42 +250,58 @@ func (tc *TextCleaner) setupEventHandlers() {
 		tc.processText()
 	})
 
-	// Argument 1 changed - reprocess
-	tc.argument1.Connect("changed", func() {
-		tc.processText()
-	})
-
-	// Argument 2 changed - reprocess
-	tc.argument2.Connect("changed", func() {
-		tc.processText()
-	})
-
-	// Operation changed - reprocess
-	tc.operationBox.Connect("changed", func() {
-		tc.processText()
-	})
-
 	// Copy button - copy output to clipboard
 	tc.copyButton.Connect("clicked", func() {
 		tc.copyToClipboard()
 	})
+
+	// Add to Pipeline button
+	tc.addButton.Connect("clicked", func() {
+		tc.addToPipeline()
+	})
+
+	// Pipeline list selection
+	tc.pipelineListBox.Connect("row-selected", func() {
+		tc.updatePipelineSelection()
+	})
+
+	// Pipeline list double-click to edit
+	tc.pipelineListBox.Connect("row-activated", func(listBox *gtk.ListBox, row *gtk.ListBoxRow) {
+		tc.loadOperationForEdit()
+	})
+
+	// Update button
+	tc.updateButton.Connect("clicked", func() {
+		tc.updateSelectedOperation()
+	})
+
+	// Remove button
+	tc.removeButton.Connect("clicked", func() {
+		tc.removeFromPipeline()
+	})
+
+	// Move Up button
+	tc.moveUpButton.Connect("clicked", func() {
+		tc.moveOperationUp()
+	})
+
+	// Move Down button
+	tc.moveDownButton.Connect("clicked", func() {
+		tc.moveOperationDown()
+	})
 }
 
-// processText processes the input text with the selected operation and updates output
+// processText processes the input text through the pipeline and updates output
 func (tc *TextCleaner) processText() {
 	// Get input text
 	startIter, endIter := tc.inputBuffer.GetBounds()
 	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
 
-	// Get selected operation
-	operationName := tc.operationBox.GetActiveText()
-
-	// Get arguments
-	arg1, _ := tc.argument1.GetText()
-	arg2, _ := tc.argument2.GetText()
-
-	// Process the text
-	output := ProcessText(input, operationName, arg1, arg2)
+	// Process through pipeline
+	output := input
+	for _, pipeOp := range tc.pipeline {
+		output = ProcessText(output, pipeOp.Name, pipeOp.Arg1, pipeOp.Arg2)
+	}
 
 	// Update output buffer
 	tc.outputBuffer.SetText(output)
@@ -218,4 +319,176 @@ func (tc *TextCleaner) copyToClipboard() {
 	text, _ := tc.outputBuffer.GetText(startIter, endIter, true)
 
 	clipboard.SetText(text)
+}
+
+// addToPipeline adds the current operation to the pipeline
+func (tc *TextCleaner) addToPipeline() {
+	operationName := tc.operationBox.GetActiveText()
+	arg1, _ := tc.argument1.GetText()
+	arg2, _ := tc.argument2.GetText()
+
+	pipeOp := PipelineOperation{
+		Name: operationName,
+		Arg1: arg1,
+		Arg2: arg2,
+	}
+
+	tc.pipeline = append(tc.pipeline, pipeOp)
+	tc.refreshPipelineList()
+	tc.processText()
+
+	// Clear arguments for next operation
+	tc.argument1.SetText("")
+	tc.argument2.SetText("")
+}
+
+// removeFromPipeline removes the selected operation from the pipeline
+func (tc *TextCleaner) removeFromPipeline() {
+	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
+		return
+	}
+
+	// Remove the operation
+	tc.pipeline = append(tc.pipeline[:tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1:]...)
+	tc.selectedPipeline = -1
+	tc.refreshPipelineList()
+	tc.processText()
+}
+
+// moveOperationUp moves the selected operation up in the pipeline
+func (tc *TextCleaner) moveOperationUp() {
+	if tc.selectedPipeline <= 0 || tc.selectedPipeline >= len(tc.pipeline) {
+		return
+	}
+
+	// Swap with previous operation
+	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline-1] = tc.pipeline[tc.selectedPipeline-1], tc.pipeline[tc.selectedPipeline]
+
+	tc.selectedPipeline--
+	tc.refreshPipelineList()
+	tc.processText()
+}
+
+// moveOperationDown moves the selected operation down in the pipeline
+func (tc *TextCleaner) moveOperationDown() {
+	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline)-1 {
+		return
+	}
+
+	// Swap with next operation
+	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1] = tc.pipeline[tc.selectedPipeline+1], tc.pipeline[tc.selectedPipeline]
+
+	tc.selectedPipeline++
+	tc.refreshPipelineList()
+	tc.processText()
+}
+
+// refreshPipelineList refreshes the pipeline list display
+func (tc *TextCleaner) refreshPipelineList() {
+	// Clear existing rows
+	tc.pipelineListBox.GetChildren().Foreach(func(item interface{}) {
+		widget := item.(*gtk.Widget)
+		tc.pipelineListBox.Remove(widget)
+	})
+
+	// Add new rows
+	for _, pipeOp := range tc.pipeline {
+		label := pipeOp.Name
+		if pipeOp.Arg1 != "" {
+			label += " (" + pipeOp.Arg1
+			if pipeOp.Arg2 != "" {
+				label += ", " + pipeOp.Arg2
+			}
+			label += ")"
+		}
+
+		row, _ := gtk.LabelNew(label)
+		row.SetXAlign(0) // Left align
+		row.SetMarginStart(5)
+		row.SetMarginEnd(5)
+		row.SetMarginTop(3)
+		row.SetMarginBottom(3)
+
+		tc.pipelineListBox.Add(row)
+	}
+
+	tc.pipelineListBox.ShowAll()
+
+	// Restore selection if valid
+	if tc.selectedPipeline >= 0 && tc.selectedPipeline < len(tc.pipeline) {
+		row := tc.pipelineListBox.GetRowAtIndex(tc.selectedPipeline)
+		tc.pipelineListBox.SelectRow(row)
+	}
+
+	tc.updateButtonStates()
+}
+
+// updatePipelineSelection updates the selected pipeline index
+func (tc *TextCleaner) updatePipelineSelection() {
+	selectedRow := tc.pipelineListBox.GetSelectedRow()
+	if selectedRow != nil {
+		tc.selectedPipeline = selectedRow.GetIndex()
+	} else {
+		tc.selectedPipeline = -1
+	}
+	tc.updateButtonStates()
+}
+
+// updateButtonStates updates the enabled/disabled state of pipeline buttons
+func (tc *TextCleaner) updateButtonStates() {
+	hasSelection := tc.selectedPipeline >= 0 && tc.selectedPipeline < len(tc.pipeline)
+	tc.removeButton.SetSensitive(hasSelection)
+	tc.updateButton.SetSensitive(hasSelection)
+
+	canMoveUp := hasSelection && tc.selectedPipeline > 0
+	tc.moveUpButton.SetSensitive(canMoveUp)
+
+	canMoveDown := hasSelection && tc.selectedPipeline < len(tc.pipeline)-1
+	tc.moveDownButton.SetSensitive(canMoveDown)
+}
+
+// loadOperationForEdit loads the selected operation into the toolbar for editing
+func (tc *TextCleaner) loadOperationForEdit() {
+	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
+		return
+	}
+
+	pipeOp := tc.pipeline[tc.selectedPipeline]
+
+	// Find and set the operation in the combo box
+	operations := GetOperations()
+	for i, op := range operations {
+		if op.Name == pipeOp.Name {
+			tc.operationBox.SetActive(i)
+			break
+		}
+	}
+
+	// Set the arguments
+	tc.argument1.SetText(pipeOp.Arg1)
+	tc.argument2.SetText(pipeOp.Arg2)
+}
+
+// updateSelectedOperation updates the selected operation with current toolbar values
+func (tc *TextCleaner) updateSelectedOperation() {
+	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
+		return
+	}
+
+	operationName := tc.operationBox.GetActiveText()
+	arg1, _ := tc.argument1.GetText()
+	arg2, _ := tc.argument2.GetText()
+
+	tc.pipeline[tc.selectedPipeline] = PipelineOperation{
+		Name: operationName,
+		Arg1: arg1,
+		Arg2: arg2,
+	}
+
+	tc.refreshPipelineList()
+	tc.processText()
+
+	// Clear arguments
+	tc.argument1.SetText("")
+	tc.argument2.SetText("")
 }
