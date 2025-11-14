@@ -483,21 +483,32 @@ func selectJson(input, arg1, arg2 string) string {
 	return string(output)
 }
 
-// calculate evaluates mathematical expressions
+// calculate evaluates mathematical expressions found in text
 func calculate(input, arg1, arg2 string) string {
-	// Simple calculator supporting basic operations
-	// This is a simplified version - the original uses a full expression parser
-
-	// Try to evaluate simple expressions
-	input = strings.TrimSpace(input)
-
-	// Support basic operations: +, -, *, /
-	result := evaluateExpression(input)
-	if result != "" {
-		return result
+	if input == "" {
+		return input
 	}
 
-	return input
+	// Find all mathematical expressions in the text and evaluate them
+	// Expressions are patterns like: number op number op number ...
+	// Examples: "6 + 5", "5 * 55 + 3", "-10 + 5.5", "Item 1 = 6 + 5"
+
+	result := input
+
+	// Regular expression to match mathematical expressions
+	// Matches: optional spaces, optional minus, number, then (operator number) repeated
+	// This pattern captures complete mathematical expressions embedded in text
+	re := regexp.MustCompile(`(-?\d+(?:\.\d+)?(?:\s*[+\-*/]\s*-?\d+(?:\.\d+)?)*)`)
+
+	result = re.ReplaceAllStringFunc(result, func(match string) string {
+		// Evaluate each matched expression
+		if value, err := evaluateExpression(match); err == nil {
+			return formatNumber(value)
+		}
+		return match
+	})
+
+	return result
 }
 
 // Helper functions
@@ -523,53 +534,222 @@ func addRegexFlags(pattern string, flags map[rune]bool) string {
 	return prefix + pattern
 }
 
-// evaluateExpression evaluates a simple mathematical expression
-func evaluateExpression(expr string) string {
-	expr = strings.TrimSpace(expr)
+// Token represents a token in the expression
+type Token struct {
+	Type  string  // "number", "operator", "eof"
+	Value float64 // for numbers
+	Op    rune    // for operators: +, -, *, /
+}
 
-	// Handle simple number
-	if num, err := strconv.ParseFloat(expr, 64); err == nil {
-		return formatNumber(num)
+// Tokenizer tokenizes a mathematical expression
+type Tokenizer struct {
+	expr      string
+	pos       int
+	ch        rune
+	lastToken Token // Track last token to distinguish "-" operator from negative sign
+}
+
+// NewTokenizer creates a new tokenizer
+func NewTokenizer(expr string) *Tokenizer {
+	expr = strings.TrimSpace(expr)
+	t := &Tokenizer{expr: expr, pos: 0, lastToken: Token{Type: "eof"}}
+	if len(expr) > 0 {
+		t.ch = rune(expr[0])
+	}
+	return t
+}
+
+// NextToken returns the next token from the expression
+func (t *Tokenizer) NextToken() Token {
+	// Skip whitespace
+	for t.pos < len(t.expr) && unicode.IsSpace(t.ch) {
+		t.advance()
 	}
 
-	// Try to parse and evaluate basic expressions
-	// This is a very simplified calculator
-	for _, op := range []string{"+", "-", "*", "/"} {
-		if strings.Contains(expr, op) {
-			parts := strings.Split(expr, op)
-			if len(parts) == 2 {
-				left, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-				right, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if t.pos >= len(t.expr) {
+		return Token{Type: "eof"}
+	}
 
-				if err1 == nil && err2 == nil {
-					var result float64
-					switch op {
-					case "+":
-						result = left + right
-					case "-":
-						result = left - right
-					case "*":
-						result = left * right
-					case "/":
-						if right != 0 {
-							result = left / right
-						} else {
-							return expr
-						}
-					}
-					return formatNumber(result)
-				}
-			}
+	// Determine if "-" should be treated as negative sign or operator
+	// "-" is a negative sign only if the last token was an operator or EOF (start of expression)
+	isNegativeSign := t.ch == '-' && (t.lastToken.Type == "operator" || t.lastToken.Type == "eof")
+
+	// Handle numbers and negative numbers
+	if unicode.IsDigit(t.ch) || (isNegativeSign && t.pos+1 < len(t.expr) && (unicode.IsDigit(rune(t.expr[t.pos+1])) || rune(t.expr[t.pos+1]) == '.')) ||
+		(t.ch == '.' && t.pos+1 < len(t.expr) && unicode.IsDigit(rune(t.expr[t.pos+1]))) {
+		return t.readNumber()
+	}
+
+	// Handle operators
+	if t.ch == '+' || t.ch == '-' || t.ch == '*' || t.ch == '/' {
+		op := t.ch
+		t.advance()
+		token := Token{Type: "operator", Op: op}
+		t.lastToken = token
+		return token
+	}
+
+	// Unknown character - skip it
+	t.advance()
+	return t.NextToken()
+}
+
+// readNumber reads a number from the expression
+func (t *Tokenizer) readNumber() Token {
+	start := t.pos
+
+	// Handle negative sign
+	if t.ch == '-' {
+		t.advance()
+	}
+
+	// Read integer part
+	for t.pos < len(t.expr) && unicode.IsDigit(t.ch) {
+		t.advance()
+	}
+
+	// Read decimal part
+	if t.pos < len(t.expr) && t.ch == '.' {
+		t.advance()
+		for t.pos < len(t.expr) && unicode.IsDigit(t.ch) {
+			t.advance()
 		}
 	}
 
-	return ""
+	numStr := t.expr[start:t.pos]
+	num, _ := strconv.ParseFloat(numStr, 64)
+	token := Token{Type: "number", Value: num}
+	t.lastToken = token
+	return token
+}
+
+// advance moves to the next character
+func (t *Tokenizer) advance() {
+	t.pos++
+	if t.pos < len(t.expr) {
+		t.ch = rune(t.expr[t.pos])
+	}
+}
+
+// Parser parses and evaluates mathematical expressions
+type Parser struct {
+	tokenizer *Tokenizer
+	current   Token
+}
+
+// NewParser creates a new parser
+func NewParser(expr string) *Parser {
+	t := NewTokenizer(expr)
+	p := &Parser{tokenizer: t}
+	p.current = p.tokenizer.NextToken()
+	return p
+}
+
+// Parse parses and evaluates the expression
+func (p *Parser) Parse() (float64, error) {
+	if p.current.Type == "eof" {
+		return 0, fmt.Errorf("empty expression")
+	}
+	result, err := p.parseAddSub()
+	if p.current.Type != "eof" {
+		return 0, fmt.Errorf("unexpected token after expression")
+	}
+	return result, err
+}
+
+// parseAddSub parses addition and subtraction (lowest precedence)
+func (p *Parser) parseAddSub() (float64, error) {
+	left, err := p.parseMulDiv()
+	if err != nil {
+		return 0, err
+	}
+
+	for p.current.Type == "operator" && (p.current.Op == '+' || p.current.Op == '-') {
+		op := p.current.Op
+		p.current = p.tokenizer.NextToken()
+		right, err := p.parseMulDiv()
+		if err != nil {
+			return 0, err
+		}
+		if op == '+' {
+			left = left + right
+		} else {
+			left = left - right
+		}
+	}
+
+	return left, nil
+}
+
+// parseMulDiv parses multiplication and division (highest precedence)
+func (p *Parser) parseMulDiv() (float64, error) {
+	left, err := p.parseNumber()
+	if err != nil {
+		return 0, err
+	}
+
+	for p.current.Type == "operator" && (p.current.Op == '*' || p.current.Op == '/') {
+		op := p.current.Op
+		p.current = p.tokenizer.NextToken()
+		right, err := p.parseNumber()
+		if err != nil {
+			return 0, err
+		}
+		if op == '*' {
+			left = left * right
+		} else {
+			if right == 0 {
+				return 0, fmt.Errorf("division by zero")
+			}
+			left = left / right
+		}
+	}
+
+	return left, nil
+}
+
+// parseNumber parses a number or a negative number
+func (p *Parser) parseNumber() (float64, error) {
+	if p.current.Type == "number" {
+		num := p.current.Value
+		p.current = p.tokenizer.NextToken()
+		return num, nil
+	}
+
+	if p.current.Type == "operator" && p.current.Op == '-' {
+		p.current = p.tokenizer.NextToken()
+		num, err := p.parseNumber()
+		if err != nil {
+			return 0, err
+		}
+		return -num, nil
+	}
+
+	return 0, fmt.Errorf("expected number")
+}
+
+// evaluateExpression evaluates a mathematical expression and returns the result
+func evaluateExpression(expr string) (float64, error) {
+	parser := NewParser(expr)
+	return parser.Parse()
 }
 
 // formatNumber formats a number for display
 func formatNumber(num float64) string {
+	// Handle special values
+	if math.IsNaN(num) || math.IsInf(num, 0) {
+		return fmt.Sprintf("%v", num)
+	}
+
+	// Remove trailing zeros and decimal point if not needed
 	if math.Floor(num) == num {
 		return fmt.Sprintf("%.0f", num)
 	}
-	return fmt.Sprintf("%g", num)
+
+	// Format with up to 10 decimal places, removing trailing zeros
+	formatted := fmt.Sprintf("%.10f", num)
+	formatted = strings.TrimRight(formatted, "0")
+	formatted = strings.TrimRight(formatted, ".")
+
+	return formatted
 }
