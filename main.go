@@ -192,21 +192,24 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	buttonBox, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 
 	// Remove button
-	removeButton, _ := gtk.ButtonNewWithLabel("Remove")
+	removeButton, _ := gtk.ButtonNewFromIconName("list-remove", gtk.ICON_SIZE_BUTTON)
 	tc.removeButton = removeButton
 	removeButton.SetSensitive(false)
+	removeButton.SetTooltipText("Remove")
 	buttonBox.PackStart(removeButton, true, true, 0)
 
 	// Move Up button
-	moveUpButton, _ := gtk.ButtonNewWithLabel("Move Up")
+	moveUpButton, _ := gtk.ButtonNewFromIconName("go-up", gtk.ICON_SIZE_BUTTON)
 	tc.moveUpButton = moveUpButton
 	moveUpButton.SetSensitive(false)
+	moveUpButton.SetTooltipText("Move Up")
 	buttonBox.PackStart(moveUpButton, true, true, 0)
 
 	// Move Down button
-	moveDownButton, _ := gtk.ButtonNewWithLabel("Move Down")
+	moveDownButton, _ := gtk.ButtonNewFromIconName("go-down", gtk.ICON_SIZE_BUTTON)
 	tc.moveDownButton = moveDownButton
 	moveDownButton.SetSensitive(false)
+	moveDownButton.SetTooltipText("Move Down")
 	buttonBox.PackStart(moveDownButton, true, true, 0)
 
 	panel.PackStart(buttonBox, false, false, 0)
