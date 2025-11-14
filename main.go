@@ -119,58 +119,66 @@ func (tc *TextCleaner) BuildUI() {
 }
 
 func (tc *TextCleaner) createOperationControls() *gtk.Box {
-	controlsBox, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	controlsBox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
 
-	// Operation label
-	label, _ := gtk.LabelNew("Operation:")
-	controlsBox.PackStart(label, false, false, 0)
+	// Operation row
+	opRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	opLabel, _ := gtk.LabelNew("Operation:")
+	opLabel.SetXAlign(0)
+	opRow.PackStart(opLabel, false, false, 0)
 
-	// Operation combo box
 	operationBox, _ := gtk.ComboBoxTextNew()
 	tc.operationBox = operationBox
-
-	// Add all available operations
 	operations := GetOperations()
 	for _, op := range operations {
 		operationBox.AppendText(op.Name)
 	}
 	operationBox.SetActive(0)
+	opRow.PackStart(operationBox, true, true, 0)
+	controlsBox.PackStart(opRow, false, false, 0)
 
-	controlsBox.PackStart(operationBox, false, false, 0)
-
-	// Argument 1
+	// Argument 1 row
+	arg1Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg1Label, _ := gtk.LabelNew("Arg1:")
-	controlsBox.PackStart(arg1Label, false, false, 0)
+	arg1Label.SetXAlign(0)
+	arg1Label.SetWidthChars(9)
+	arg1Row.PackStart(arg1Label, false, false, 0)
 
 	arg1Entry, _ := gtk.EntryNew()
 	tc.argument1 = arg1Entry
-	arg1Entry.SetWidthChars(20)
-	controlsBox.PackStart(arg1Entry, false, false, 0)
+	arg1Row.PackStart(arg1Entry, true, true, 0)
+	controlsBox.PackStart(arg1Row, false, false, 0)
 
-	// Argument 2
+	// Argument 2 row
+	arg2Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg2Label, _ := gtk.LabelNew("Arg2:")
-	controlsBox.PackStart(arg2Label, false, false, 0)
+	arg2Label.SetXAlign(0)
+	arg2Label.SetWidthChars(9)
+	arg2Row.PackStart(arg2Label, false, false, 0)
 
 	arg2Entry, _ := gtk.EntryNew()
 	tc.argument2 = arg2Entry
-	arg2Entry.SetWidthChars(20)
-	controlsBox.PackStart(arg2Entry, false, false, 0)
+	arg2Row.PackStart(arg2Entry, true, true, 0)
+	controlsBox.PackStart(arg2Row, false, false, 0)
 
 	// Line-based checkbox
 	lineBasedCheckbox, _ := gtk.CheckButtonNewWithLabel("Line-based")
 	tc.lineBasedCheckbox = lineBasedCheckbox
 	controlsBox.PackStart(lineBasedCheckbox, false, false, 0)
 
-	// Add to Pipeline button
+	// Buttons row
+	buttonRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
 	addButton, _ := gtk.ButtonNewWithLabel("Add to Pipeline")
 	tc.addButton = addButton
-	controlsBox.PackStart(addButton, false, false, 0)
+	buttonRow.PackStart(addButton, true, true, 0)
 
-	// Update button (hidden/shown based on selection)
 	updateButton, _ := gtk.ButtonNewWithLabel("Update Selected")
 	tc.updateButton = updateButton
 	updateButton.SetSensitive(false)
-	controlsBox.PackStart(updateButton, false, false, 0)
+	buttonRow.PackStart(updateButton, true, true, 0)
+
+	controlsBox.PackStart(buttonRow, false, false, 0)
 
 	return controlsBox
 }
