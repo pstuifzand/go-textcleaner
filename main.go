@@ -362,8 +362,7 @@ func (tc *TextCleaner) moveOperationUp() {
 	}
 
 	// Swap with previous operation
-	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline-1] =
-		tc.pipeline[tc.selectedPipeline-1], tc.pipeline[tc.selectedPipeline]
+	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline-1] = tc.pipeline[tc.selectedPipeline-1], tc.pipeline[tc.selectedPipeline]
 
 	tc.selectedPipeline--
 	tc.refreshPipelineList()
@@ -377,8 +376,7 @@ func (tc *TextCleaner) moveOperationDown() {
 	}
 
 	// Swap with next operation
-	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1] =
-		tc.pipeline[tc.selectedPipeline+1], tc.pipeline[tc.selectedPipeline]
+	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1] = tc.pipeline[tc.selectedPipeline+1], tc.pipeline[tc.selectedPipeline]
 
 	tc.selectedPipeline++
 	tc.refreshPipelineList()
@@ -394,7 +392,7 @@ func (tc *TextCleaner) refreshPipelineList() {
 	})
 
 	// Add new rows
-	for i, pipeOp := range tc.pipeline {
+	for _, pipeOp := range tc.pipeline {
 		label := pipeOp.Name
 		if pipeOp.Arg1 != "" {
 			label += " (" + pipeOp.Arg1
