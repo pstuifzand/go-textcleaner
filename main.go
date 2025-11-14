@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 )
 
@@ -207,7 +208,7 @@ func (tc *TextCleaner) processText() {
 
 // copyToClipboard copies the output text to clipboard
 func (tc *TextCleaner) copyToClipboard() {
-	clipboard, err := gtk.ClipboardGet(glib.GdkAtomIntern("CLIPBOARD", true))
+	clipboard, err := gtk.ClipboardGet(gdk.GdkAtomIntern("CLIPBOARD", true))
 	if err != nil {
 		log.Println("Failed to get clipboard:", err)
 		return
