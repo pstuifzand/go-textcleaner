@@ -120,6 +120,10 @@ func (tc *TextCleaner) BuildUI() {
 
 func (tc *TextCleaner) createOperationControls() *gtk.Box {
 	controlsBox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+	controlsBox.SetMarginTop(10)
+	controlsBox.SetMarginBottom(10)
+	controlsBox.SetMarginStart(10)
+	controlsBox.SetMarginEnd(10)
 
 	// Operation row
 	opRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
