@@ -1,25 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 )
 
 const (
 	appTitle  = "TextCleaner"
-	appWidth  = 1000
-	appHeight = 600
+	appWidth  = 1200
+	appHeight = 700
 )
-
-// PipelineOperation represents a single operation in the processing pipeline
-type PipelineOperation struct {
-	Name      string
-	Arg1      string
-	Arg2      string
-	LineBased bool // If true, operation is applied to each line individually
-}
 
 type TextCleaner struct {
 	window            *gtk.Window
@@ -27,27 +21,32 @@ type TextCleaner struct {
 	outputView        *gtk.TextView
 	inputBuffer       *gtk.TextBuffer
 	outputBuffer      *gtk.TextBuffer
-	operationBox      *gtk.ComboBoxText
+	copyButton        *gtk.Button
+	pipeline          []PipelineNode
+	pipelineTree      *gtk.TreeView
+	treeStore         *gtk.TreeStore
+	selectedNode      *gtk.TreePath
+	nodeTypeCombo     *gtk.ComboBoxText
+	operationCombo    *gtk.ComboBoxText
 	argument1         *gtk.Entry
 	argument2         *gtk.Entry
-	lineBasedCheckbox *gtk.CheckButton
-	copyButton        *gtk.Button
-	pipeline          []PipelineOperation
-	pipelineListBox   *gtk.ListBox
-	addButton         *gtk.Button
-	updateButton      *gtk.Button
-	removeButton      *gtk.Button
-	moveUpButton      *gtk.Button
-	moveDownButton    *gtk.Button
-	selectedPipeline  int // -1 means no selection
+	conditionEntry    *gtk.Entry
+	nodeNameEntry     *gtk.Entry
+	createNodeButton  *gtk.Button
+	editNodeButton    *gtk.Button
+	deleteNodeButton  *gtk.Button
+	indentButton      *gtk.Button
+	unindentButton    *gtk.Button
+	addChildButton    *gtk.Button
+	selectedNodeID    string // Node ID for the selected node (works with nested nodes)
 }
 
 func main() {
 	gtk.Init(nil)
 
 	app := &TextCleaner{}
-	app.selectedPipeline = -1 // Initialize with no selection
-	app.pipeline = []PipelineOperation{}
+	app.selectedNodeID = ""
+	app.pipeline = []PipelineNode{}
 	app.BuildUI()
 
 	gtk.Main()
@@ -73,7 +72,7 @@ func (tc *TextCleaner) BuildUI() {
 	mainBox.SetMarginStart(5)
 	mainBox.SetMarginEnd(5)
 
-	// Create toolbar area with just copy button
+	// Create toolbar
 	toolbar, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 
 	// Spacer
@@ -89,7 +88,7 @@ func (tc *TextCleaner) BuildUI() {
 
 	// Create main horizontal paned (pipeline panel | text panes)
 	mainPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
-	mainPaned.SetPosition(250) // Pipeline panel width
+	mainPaned.SetPosition(350) // Pipeline panel width
 
 	// Create pipeline panel (left side)
 	pipelinePanel := tc.createPipelinePanel()
@@ -97,7 +96,7 @@ func (tc *TextCleaner) BuildUI() {
 
 	// Create horizontal paned for input/output (right side)
 	textPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
-	textPaned.SetPosition((appWidth - 250) / 2)
+	textPaned.SetPosition((appWidth - 350) / 2)
 
 	// Create input pane
 	inputFrame := tc.createTextPane("Input", true)
@@ -114,38 +113,82 @@ func (tc *TextCleaner) BuildUI() {
 	tc.window.Add(mainBox)
 	tc.window.ShowAll()
 
-	// Wire up event handlers for real-time processing
+	// Wire up event handlers
 	tc.setupEventHandlers()
 }
 
-func (tc *TextCleaner) createOperationControls() *gtk.Box {
+func (tc *TextCleaner) createNodeControls() *gtk.Box {
 	controlsBox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
 	controlsBox.SetMarginTop(10)
 	controlsBox.SetMarginBottom(10)
 	controlsBox.SetMarginStart(10)
 	controlsBox.SetMarginEnd(10)
 
-	// Operation row
+	// Node Type selector
+	typeRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	typeLabel, _ := gtk.LabelNew("Node Type:")
+	typeLabel.SetXAlign(0)
+	typeLabel.SetWidthChars(12)
+	typeRow.PackStart(typeLabel, false, false, 0)
+
+	nodeTypeCombo, _ := gtk.ComboBoxTextNew()
+	tc.nodeTypeCombo = nodeTypeCombo
+	nodeTypeCombo.AppendText("Operation")
+	nodeTypeCombo.AppendText("If (Conditional)")
+	nodeTypeCombo.AppendText("ForEachLine")
+	nodeTypeCombo.AppendText("Group")
+	nodeTypeCombo.SetActive(0)
+	typeRow.PackStart(nodeTypeCombo, true, true, 0)
+	controlsBox.PackStart(typeRow, false, false, 0)
+
+	// Operation selector (hidden for non-operation nodes)
 	opRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	opLabel, _ := gtk.LabelNew("Operation:")
 	opLabel.SetXAlign(0)
+	opLabel.SetWidthChars(12)
 	opRow.PackStart(opLabel, false, false, 0)
 
-	operationBox, _ := gtk.ComboBoxTextNew()
-	tc.operationBox = operationBox
+	operationCombo, _ := gtk.ComboBoxTextNew()
+	tc.operationCombo = operationCombo
 	operations := GetOperations()
 	for _, op := range operations {
-		operationBox.AppendText(op.Name)
+		operationCombo.AppendText(op.Name)
 	}
-	operationBox.SetActive(0)
-	opRow.PackStart(operationBox, true, true, 0)
+	operationCombo.SetActive(0)
+	opRow.PackStart(operationCombo, true, true, 0)
 	controlsBox.PackStart(opRow, false, false, 0)
 
-	// Argument 1 row
+	// Node Name
+	nameRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	nameLabel, _ := gtk.LabelNew("Name:")
+	nameLabel.SetXAlign(0)
+	nameLabel.SetWidthChars(12)
+	nameRow.PackStart(nameLabel, false, false, 0)
+
+	nodeNameEntry, _ := gtk.EntryNew()
+	tc.nodeNameEntry = nodeNameEntry
+	nodeNameEntry.SetPlaceholderText("Optional display name")
+	nameRow.PackStart(nodeNameEntry, true, true, 0)
+	controlsBox.PackStart(nameRow, false, false, 0)
+
+	// Condition (for If nodes)
+	condRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	condLabel, _ := gtk.LabelNew("Condition:")
+	condLabel.SetXAlign(0)
+	condLabel.SetWidthChars(12)
+	condRow.PackStart(condLabel, false, false, 0)
+
+	conditionEntry, _ := gtk.EntryNew()
+	tc.conditionEntry = conditionEntry
+	conditionEntry.SetPlaceholderText("Regex pattern")
+	condRow.PackStart(conditionEntry, true, true, 0)
+	controlsBox.PackStart(condRow, false, false, 0)
+
+	// Argument 1
 	arg1Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg1Label, _ := gtk.LabelNew("Arg1:")
 	arg1Label.SetXAlign(0)
-	arg1Label.SetWidthChars(9)
+	arg1Label.SetWidthChars(12)
 	arg1Row.PackStart(arg1Label, false, false, 0)
 
 	arg1Entry, _ := gtk.EntryNew()
@@ -153,11 +196,11 @@ func (tc *TextCleaner) createOperationControls() *gtk.Box {
 	arg1Row.PackStart(arg1Entry, true, true, 0)
 	controlsBox.PackStart(arg1Row, false, false, 0)
 
-	// Argument 2 row
+	// Argument 2
 	arg2Row, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 	arg2Label, _ := gtk.LabelNew("Arg2:")
 	arg2Label.SetXAlign(0)
-	arg2Label.SetWidthChars(9)
+	arg2Label.SetWidthChars(12)
 	arg2Row.PackStart(arg2Label, false, false, 0)
 
 	arg2Entry, _ := gtk.EntryNew()
@@ -165,78 +208,101 @@ func (tc *TextCleaner) createOperationControls() *gtk.Box {
 	arg2Row.PackStart(arg2Entry, true, true, 0)
 	controlsBox.PackStart(arg2Row, false, false, 0)
 
-	// Line-based checkbox
-	lineBasedCheckbox, _ := gtk.CheckButtonNewWithLabel("Line-based")
-	tc.lineBasedCheckbox = lineBasedCheckbox
-	controlsBox.PackStart(lineBasedCheckbox, false, false, 0)
-
 	// Buttons row
 	buttonRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 
-	addButton, _ := gtk.ButtonNewWithLabel("Add to Pipeline")
-	tc.addButton = addButton
-	buttonRow.PackStart(addButton, true, true, 0)
+	createNodeButton, _ := gtk.ButtonNewWithLabel("Create Node")
+	tc.createNodeButton = createNodeButton
+	buttonRow.PackStart(createNodeButton, true, true, 0)
 
-	updateButton, _ := gtk.ButtonNewWithLabel("Update Selected")
-	tc.updateButton = updateButton
-	updateButton.SetSensitive(false)
-	buttonRow.PackStart(updateButton, true, true, 0)
+	editNodeButton, _ := gtk.ButtonNewWithLabel("Update Node")
+	tc.editNodeButton = editNodeButton
+	editNodeButton.SetSensitive(false)
+	buttonRow.PackStart(editNodeButton, true, true, 0)
 
 	controlsBox.PackStart(buttonRow, false, false, 0)
+
+	// Add child row
+	addChildRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
+	addChildButton, _ := gtk.ButtonNewWithLabel("Add Child")
+	tc.addChildButton = addChildButton
+	addChildButton.SetSensitive(false)
+	addChildRow.PackStart(addChildButton, true, true, 0)
+
+	indentButton, _ := gtk.ButtonNewWithLabel("Indent")
+	tc.indentButton = indentButton
+	indentButton.SetSensitive(false)
+	addChildRow.PackStart(indentButton, true, true, 0)
+
+	unindentButton, _ := gtk.ButtonNewWithLabel("Unindent")
+	tc.unindentButton = unindentButton
+	unindentButton.SetSensitive(false)
+	addChildRow.PackStart(unindentButton, true, true, 0)
+
+	deleteNodeButton, _ := gtk.ButtonNewWithLabel("Delete")
+	tc.deleteNodeButton = deleteNodeButton
+	deleteNodeButton.SetSensitive(false)
+	addChildRow.PackStart(deleteNodeButton, true, true, 0)
+
+	controlsBox.PackStart(addChildRow, false, false, 0)
 
 	return controlsBox
 }
 
 func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	panel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+	panel.SetMarginTop(5)
+	panel.SetMarginBottom(5)
+	panel.SetMarginStart(5)
+	panel.SetMarginEnd(5)
 
-	// Add operation controls at the top
-	operationControls := tc.createOperationControls()
-	panel.PackStart(operationControls, false, false, 0)
+	// Create paned layout for controls and tree
+	paned, _ := gtk.PanedNew(gtk.ORIENTATION_VERTICAL)
+	paned.SetPosition(320) // Controls panel height
+
+	// ===== TOP SECTION: Node Controls =====
+	nodeControls := tc.createNodeControls()
+	controlsFrame, _ := gtk.FrameNew("Node Controls")
+	controlsFrame.Add(nodeControls)
+	paned.Add1(controlsFrame)
+
+	// ===== BOTTOM SECTION: Pipeline Tree =====
+	treePanel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
 
 	// Title label
-	titleLabel, _ := gtk.LabelNew("Operations Pipeline")
-	titleLabel.SetMarkup("<b>Operations Pipeline</b>")
-	panel.PackStart(titleLabel, false, false, 5)
+	titleLabel, _ := gtk.LabelNew("Pipeline Tree")
+	titleLabel.SetMarkup("<b>Pipeline Tree</b>")
+	treePanel.PackStart(titleLabel, false, false, 0)
 
-	// Scrolled window for the list
+	// Scrolled window for the tree
 	scrolledWindow, _ := gtk.ScrolledWindowNew(nil, nil)
 	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	scrolledWindow.SetSizeRequest(200, -1)
+	scrolledWindow.SetSizeRequest(300, -1)
 
-	// ListBox for operations
-	listBox, _ := gtk.ListBoxNew()
-	tc.pipelineListBox = listBox
-	listBox.SetSelectionMode(gtk.SELECTION_SINGLE)
+	// Create tree store with two columns: display text and node ID
+	treeStore, _ := gtk.TreeStoreNew(glib.TYPE_STRING, glib.TYPE_STRING)
+	tc.treeStore = treeStore
 
-	scrolledWindow.Add(listBox)
-	panel.PackStart(scrolledWindow, true, true, 0)
+	// Create tree view
+	treeView, _ := gtk.TreeViewNew()
+	tc.pipelineTree = treeView
+	treeView.SetModel(treeStore)
 
-	// Button box for controls
-	buttonBox, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	// Add column for display text (column 0)
+	renderer, _ := gtk.CellRendererTextNew()
+	column, _ := gtk.TreeViewColumnNewWithAttribute("Node", renderer, "text", 0)
+	treeView.AppendColumn(column)
 
-	// Remove button
-	removeButton, _ := gtk.ButtonNewFromIconName("list-remove", gtk.ICON_SIZE_BUTTON)
-	tc.removeButton = removeButton
-	removeButton.SetSensitive(false)
-	removeButton.SetTooltipText("Remove")
-	buttonBox.PackStart(removeButton, true, true, 0)
+	// Set properties
+	treeView.SetHeadersVisible(false)
 
-	// Move Up button
-	moveUpButton, _ := gtk.ButtonNewFromIconName("go-up", gtk.ICON_SIZE_BUTTON)
-	tc.moveUpButton = moveUpButton
-	moveUpButton.SetSensitive(false)
-	moveUpButton.SetTooltipText("Move Up")
-	buttonBox.PackStart(moveUpButton, true, true, 0)
+	scrolledWindow.Add(treeView)
+	treePanel.PackStart(scrolledWindow, true, true, 0)
 
-	// Move Down button
-	moveDownButton, _ := gtk.ButtonNewFromIconName("go-down", gtk.ICON_SIZE_BUTTON)
-	tc.moveDownButton = moveDownButton
-	moveDownButton.SetSensitive(false)
-	moveDownButton.SetTooltipText("Move Down")
-	buttonBox.PackStart(moveDownButton, true, true, 0)
+	paned.Add2(treePanel)
 
-	panel.PackStart(buttonBox, false, false, 0)
+	panel.PackStart(paned, true, true, 0)
 
 	return panel
 }
@@ -270,84 +336,521 @@ func (tc *TextCleaner) createTextPane(title string, isInput bool) *gtk.Frame {
 	return frame
 }
 
-// setupEventHandlers wires up all event handlers for real-time processing
+// setupEventHandlers wires up all event handlers
 func (tc *TextCleaner) setupEventHandlers() {
 	// Input buffer changed - process text in real-time
 	tc.inputBuffer.Connect("changed", func() {
 		tc.processText()
 	})
 
-	// Copy button - copy output to clipboard
+	// Copy button
 	tc.copyButton.Connect("clicked", func() {
 		tc.copyToClipboard()
 	})
 
-	// Add to Pipeline button
-	tc.addButton.Connect("clicked", func() {
-		tc.addToPipeline()
+	// Node type changed
+	tc.nodeTypeCombo.Connect("changed", func() {
+		tc.updateNodeTypeUI()
 	})
 
-	// Pipeline list selection
-	tc.pipelineListBox.Connect("row-selected", func() {
-		tc.updatePipelineSelection()
+	// Tree selection changed
+	tc.pipelineTree.Connect("cursor-changed", func() {
+		tc.updateTreeSelection()
 	})
 
-	// Pipeline list double-click to edit
-	tc.pipelineListBox.Connect("row-activated", func(listBox *gtk.ListBox, row *gtk.ListBoxRow) {
-		tc.loadOperationForEdit()
+	// Create Node button
+	tc.createNodeButton.Connect("clicked", func() {
+		tc.createNewNode()
 	})
 
-	// Update button
-	tc.updateButton.Connect("clicked", func() {
-		tc.updateSelectedOperation()
+	// Edit Node button
+	tc.editNodeButton.Connect("clicked", func() {
+		tc.updateSelectedNode()
 	})
 
-	// Remove button
-	tc.removeButton.Connect("clicked", func() {
-		tc.removeFromPipeline()
+	// Add Child button
+	tc.addChildButton.Connect("clicked", func() {
+		tc.addChildNode()
 	})
 
-	// Move Up button
-	tc.moveUpButton.Connect("clicked", func() {
-		tc.moveOperationUp()
+	// Delete Node button
+	tc.deleteNodeButton.Connect("clicked", func() {
+		tc.deleteSelectedNode()
 	})
 
-	// Move Down button
-	tc.moveDownButton.Connect("clicked", func() {
-		tc.moveOperationDown()
+	// Indent button
+	tc.indentButton.Connect("clicked", func() {
+		tc.indentSelectedNode()
+	})
+
+	// Unindent button
+	tc.unindentButton.Connect("clicked", func() {
+		tc.unindentSelectedNode()
 	})
 }
 
-// processText processes the input text through the pipeline and updates output
+func (tc *TextCleaner) updateNodeTypeUI() {
+	nodeType := tc.nodeTypeCombo.GetActiveText()
+
+	// Show/hide fields based on node type
+	switch nodeType {
+	case "Operation":
+		tc.operationCombo.ShowAll()
+		tc.argument1.ShowAll()
+		tc.argument2.ShowAll()
+		tc.conditionEntry.Hide()
+	case "If (Conditional)":
+		tc.operationCombo.Hide()
+		tc.argument1.Hide()
+		tc.argument2.Hide()
+		tc.conditionEntry.ShowAll()
+	case "ForEachLine":
+		tc.operationCombo.Hide()
+		tc.argument1.Hide()
+		tc.argument2.Hide()
+		tc.conditionEntry.Hide()
+	case "Group":
+		tc.operationCombo.Hide()
+		tc.argument1.Hide()
+		tc.argument2.Hide()
+		tc.conditionEntry.Hide()
+	}
+}
+
+func (tc *TextCleaner) updateTreeSelection() {
+	selection, _ := tc.pipelineTree.GetSelection()
+	_, iter, ok := selection.GetSelected()
+	if !ok {
+		tc.selectedNodeID = ""
+		tc.updateButtonStates()
+		return
+	}
+
+	// Get the node ID from column 1 of the tree
+	val, _ := tc.treeStore.GetValue(iter, 1)
+	nodeID, _ := val.GetString()
+
+	// Find the node by ID in the pipeline
+	foundNode := tc.findNodeByID(nodeID)
+	if foundNode != nil {
+		tc.selectedNodeID = nodeID
+		tc.loadNodeToUI(foundNode)
+	} else {
+		tc.selectedNodeID = ""
+	}
+
+	tc.updateButtonStates()
+}
+
+func (tc *TextCleaner) loadNodeToUI(node *PipelineNode) {
+	// Set node type
+	for i := 0; i < 4; i++ {
+		if tc.nodeTypeCombo.GetActiveText() == "" {
+			break
+		}
+	}
+
+	switch node.Type {
+	case "operation":
+		tc.nodeTypeCombo.SetActive(0)
+		// Find and set operation
+		operations := GetOperations()
+		for i, op := range operations {
+			if op.Name == node.Operation {
+				tc.operationCombo.SetActive(i)
+				break
+			}
+		}
+	case "if":
+		tc.nodeTypeCombo.SetActive(1)
+		tc.conditionEntry.SetText(node.Condition)
+	case "foreach":
+		tc.nodeTypeCombo.SetActive(2)
+	case "group":
+		tc.nodeTypeCombo.SetActive(3)
+	}
+
+	tc.nodeNameEntry.SetText(node.Name)
+	tc.argument1.SetText(node.Arg1)
+	tc.argument2.SetText(node.Arg2)
+	tc.updateNodeTypeUI()
+}
+
+func (tc *TextCleaner) createNewNode() {
+	// Create a placeholder node with minimal defaults
+	nodeType := tc.nodeTypeCombo.GetActiveText()
+
+	node := PipelineNode{
+		ID:       fmt.Sprintf("node_%d", len(tc.pipeline)),
+		Type:     tc.getNodeTypeFromUI(nodeType),
+		Name:     "[Empty]",
+		Children: []PipelineNode{},
+	}
+
+	// Set type-specific defaults
+	switch nodeType {
+	case "Operation":
+		node.Operation = tc.operationCombo.GetActiveText()
+	case "If (Conditional)":
+		node.Condition = ""
+	case "ForEachLine":
+		node.Name = "For Each Line"
+	case "Group":
+		node.Name = "Group"
+	}
+
+	tc.pipeline = append(tc.pipeline, node)
+	tc.refreshPipelineTree()
+	tc.processText()
+
+	// Select the newly created node
+	tc.selectedNodeID = node.ID
+	tc.loadNodeToUI(&node)
+	tc.updateButtonStates()
+
+	// Clear inputs
+	tc.clearNodeInputs()
+}
+
+func (tc *TextCleaner) updateSelectedNode() {
+	if tc.selectedNodeID == "" {
+		return
+	}
+
+	// Find the node by ID
+	node := tc.findNodeByID(tc.selectedNodeID)
+	if node == nil {
+		return
+	}
+
+	nodeType := tc.nodeTypeCombo.GetActiveText()
+	nodeName, _ := tc.nodeNameEntry.GetText()
+
+	node.Type = tc.getNodeTypeFromUI(nodeType)
+	node.Name = nodeName
+
+	switch nodeType {
+	case "Operation":
+		node.Operation = tc.operationCombo.GetActiveText()
+		node.Arg1, _ = tc.argument1.GetText()
+		node.Arg2, _ = tc.argument2.GetText()
+		// Auto-fill name if empty or still placeholder
+		if nodeName == "" || nodeName == "[Empty]" {
+			node.Name = node.Operation
+		}
+	case "If (Conditional)":
+		node.Condition, _ = tc.conditionEntry.GetText()
+		// Auto-fill name if empty or still placeholder
+		if nodeName == "" || nodeName == "[Empty]" {
+			node.Name = "If: " + node.Condition
+		}
+	case "ForEachLine":
+		// Auto-fill name if empty or still placeholder
+		if nodeName == "" || nodeName == "[Empty]" {
+			node.Name = "For Each Line"
+		}
+	case "Group":
+		// Auto-fill name if empty or still placeholder
+		if nodeName == "" || nodeName == "[Empty]" {
+			node.Name = "Group"
+		}
+	}
+
+	tc.refreshPipelineTree()
+	tc.processText()
+
+	// Reload the updated node into the UI so user can test changes
+	updatedNode := tc.findNodeByID(tc.selectedNodeID)
+	if updatedNode != nil {
+		tc.loadNodeToUI(updatedNode)
+	}
+}
+
+func (tc *TextCleaner) deleteSelectedNode() {
+	if tc.selectedNodeID == "" {
+		return
+	}
+
+	// Delete from root level
+	for i := range tc.pipeline {
+		if tc.pipeline[i].ID == tc.selectedNodeID {
+			tc.pipeline = append(tc.pipeline[:i], tc.pipeline[i+1:]...)
+			tc.selectedNodeID = ""
+			tc.refreshPipelineTree()
+			tc.processText()
+			tc.clearNodeInputs()
+			tc.updateButtonStates()
+			return
+		}
+	}
+
+	// Delete from nested children (recursive)
+	tc.deleteNodeByID(&tc.pipeline, tc.selectedNodeID)
+	tc.selectedNodeID = ""
+	tc.refreshPipelineTree()
+	tc.processText()
+	tc.clearNodeInputs()
+	tc.updateButtonStates()
+}
+
+func (tc *TextCleaner) addChildNode() {
+	if tc.selectedNodeID == "" {
+		return
+	}
+
+	// Find the parent node by ID
+	parentNode := tc.findNodeByID(tc.selectedNodeID)
+	if parentNode == nil {
+		return
+	}
+
+	nodeType := tc.nodeTypeCombo.GetActiveText()
+
+	// Create a placeholder child node with minimal defaults
+	child := PipelineNode{
+		ID:       fmt.Sprintf("%s_child_%d", tc.selectedNodeID, len(parentNode.Children)),
+		Type:     tc.getNodeTypeFromUI(nodeType),
+		Name:     "[Empty]",
+		Children: []PipelineNode{},
+	}
+
+	// Set type-specific defaults
+	switch nodeType {
+	case "Operation":
+		child.Operation = tc.operationCombo.GetActiveText()
+	case "If (Conditional)":
+		child.Condition = ""
+	case "ForEachLine":
+		child.Name = "For Each Line"
+	case "Group":
+		child.Name = "Group"
+	}
+
+	parentNode.Children = append(parentNode.Children, child)
+	tc.refreshPipelineTree()
+	tc.processText()
+
+	// Clear inputs
+	tc.clearNodeInputs()
+}
+
+func (tc *TextCleaner) indentSelectedNode() {
+	// This would move node to be a child of the previous node
+	// Simplified for now
+}
+
+func (tc *TextCleaner) unindentSelectedNode() {
+	// This would move node to be a sibling of its parent
+	// Simplified for now
+}
+
+func (tc *TextCleaner) updateButtonStates() {
+	hasSelection := tc.selectedNodeID != ""
+	tc.editNodeButton.SetSensitive(hasSelection)
+	tc.deleteNodeButton.SetSensitive(hasSelection)
+	tc.addChildButton.SetSensitive(hasSelection)
+	tc.indentButton.SetSensitive(false) // TODO: implement
+	tc.unindentButton.SetSensitive(false) // TODO: implement
+}
+
+func (tc *TextCleaner) clearNodeInputs() {
+	tc.nodeNameEntry.SetText("")
+	tc.argument1.SetText("")
+	tc.argument2.SetText("")
+	tc.conditionEntry.SetText("")
+	tc.operationCombo.SetActive(0)
+	tc.nodeTypeCombo.SetActive(0)
+}
+
+func (tc *TextCleaner) refreshPipelineTree() {
+	tc.treeStore.Clear()
+
+	// Add all root-level nodes
+	for i, node := range tc.pipeline {
+		tc.addNodeToTree(&node, nil, i)
+	}
+
+	tc.pipelineTree.ShowAll()
+
+	// Expand all nodes
+	tc.pipelineTree.ExpandAll()
+}
+
+// buildTreePathForNodeID builds a GTK TreePath for a node anywhere in the tree
+func (tc *TextCleaner) buildTreePathForNodeID(nodeID string) *gtk.TreePath {
+	// Find path indices to this node
+	indices := tc.findNodePathIndices(&tc.pipeline, nodeID)
+	if len(indices) == 0 {
+		return nil
+	}
+
+	// Build path string like "0:1:2" for nested nodes
+	pathStr := ""
+	for i, idx := range indices {
+		if i > 0 {
+			pathStr += ":"
+		}
+		pathStr += fmt.Sprintf("%d", idx)
+	}
+
+	path, _ := gtk.TreePathNewFromString(pathStr)
+	return path
+}
+
+// findNodePathIndices finds the indices path to a node (e.g., [0, 2] for root child 0, then grandchild 2)
+func (tc *TextCleaner) findNodePathIndices(nodes *[]PipelineNode, nodeID string) []int {
+	for i, node := range *nodes {
+		if node.ID == nodeID {
+			return []int{i}
+		}
+
+		// Search children
+		if childIndices := tc.findNodePathIndices(&node.Children, nodeID); len(childIndices) > 0 {
+			return append([]int{i}, childIndices...)
+		}
+
+		// Search else children
+		if childIndices := tc.findNodePathIndices(&node.ElseChildren, nodeID); len(childIndices) > 0 {
+			return append([]int{i}, childIndices...)
+		}
+	}
+	return []int{}
+}
+
+func (tc *TextCleaner) addNodeToTree(node *PipelineNode, parentIter *gtk.TreeIter, nodeIdx int) {
+	displayText := tc.getNodeDisplayText(node)
+
+	var iter *gtk.TreeIter
+	if parentIter == nil {
+		iter = tc.treeStore.Append(nil)
+	} else {
+		iter = tc.treeStore.Append(parentIter)
+	}
+
+	// Store both display text (column 0) and node ID (column 1)
+	tc.treeStore.SetValue(iter, 0, displayText)
+	tc.treeStore.SetValue(iter, 1, node.ID)
+
+	// Add children
+	for _, child := range node.Children {
+		tc.addNodeToTree(&child, iter, nodeIdx)
+	}
+}
+
+func (tc *TextCleaner) getNodeDisplayText(node *PipelineNode) string {
+	text := ""
+
+	switch node.Type {
+	case "operation":
+		text = fmt.Sprintf("[OP] %s", node.Name)
+		if node.Arg1 != "" {
+			text += fmt.Sprintf(" (%s", node.Arg1)
+			if node.Arg2 != "" {
+				text += fmt.Sprintf(", %s", node.Arg2)
+			}
+			text += ")"
+		}
+	case "if":
+		text = fmt.Sprintf("[IF] %s", node.Name)
+	case "foreach":
+		text = fmt.Sprintf("[LOOP] %s", node.Name)
+	case "group":
+		text = fmt.Sprintf("[GROUP] %s", node.Name)
+	default:
+		text = node.Name
+	}
+
+	return text
+}
+
+func (tc *TextCleaner) getNodeTypeFromUI(nodeTypeText string) string {
+	switch nodeTypeText {
+	case "Operation":
+		return "operation"
+	case "If (Conditional)":
+		return "if"
+	case "ForEachLine":
+		return "foreach"
+	case "Group":
+		return "group"
+	}
+	return "operation"
+}
+
+// findNodeByID searches for a node by ID in the pipeline (handles nested nodes)
+func (tc *TextCleaner) findNodeByID(nodeID string) *PipelineNode {
+	for i := range tc.pipeline {
+		if node := tc.searchNodeByID(&tc.pipeline[i], nodeID); node != nil {
+			return node
+		}
+	}
+	return nil
+}
+
+// searchNodeByID recursively searches for a node by ID
+func (tc *TextCleaner) searchNodeByID(node *PipelineNode, nodeID string) *PipelineNode {
+	if node.ID == nodeID {
+		return node
+	}
+	// Search in children
+	for i := range node.Children {
+		if found := tc.searchNodeByID(&node.Children[i], nodeID); found != nil {
+			return found
+		}
+	}
+	// Search in else children
+	for i := range node.ElseChildren {
+		if found := tc.searchNodeByID(&node.ElseChildren[i], nodeID); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// findNodeIndexByID finds the index of a root-level node by ID (only for root nodes)
+func (tc *TextCleaner) findNodeIndexByID(nodeID string) int {
+	for i := range tc.pipeline {
+		if tc.pipeline[i].ID == nodeID {
+			return i
+		}
+	}
+	return -1
+}
+
+// deleteNodeByID recursively deletes a node by ID from the pipeline
+func (tc *TextCleaner) deleteNodeByID(nodes *[]PipelineNode, nodeID string) bool {
+	for i := range *nodes {
+		if (*nodes)[i].ID == nodeID {
+			*nodes = append((*nodes)[:i], (*nodes)[i+1:]...)
+			return true
+		}
+		// Search in children
+		if tc.deleteNodeByID(&(*nodes)[i].Children, nodeID) {
+			return true
+		}
+		// Search in else children
+		if tc.deleteNodeByID(&(*nodes)[i].ElseChildren, nodeID) {
+			return true
+		}
+	}
+	return false
+}
+
 func (tc *TextCleaner) processText() {
-	tc.processTextUpTo(-1) // Process full pipeline
-}
-
-// processTextUpTo processes input through operations up to (and including) the specified index
-// If upToIndex is -1, processes through the entire pipeline
-func (tc *TextCleaner) processTextUpTo(upToIndex int) {
 	// Get input text
 	startIter, endIter := tc.inputBuffer.GetBounds()
 	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
 
-	// Determine how many operations to process
-	operationsToProcess := len(tc.pipeline)
-	if upToIndex >= 0 && upToIndex < len(tc.pipeline) {
-		operationsToProcess = upToIndex + 1
-	}
-
-	// Process through pipeline
+	// Execute tree pipeline
 	output := input
-	for i := 0; i < operationsToProcess; i++ {
-		pipeOp := tc.pipeline[i]
-		output = ProcessTextWithMode(output, pipeOp.Name, pipeOp.Arg1, pipeOp.Arg2, pipeOp.LineBased)
+	for i := range tc.pipeline {
+		output = ExecuteNode(&tc.pipeline[i], output)
 	}
 
 	// Update output buffer
 	tc.outputBuffer.SetText(output)
 }
 
-// copyToClipboard copies the output text to clipboard
 func (tc *TextCleaner) copyToClipboard() {
 	clipboard, err := gtk.ClipboardGet(gdk.GdkAtomIntern("CLIPBOARD", true))
 	if err != nil {
@@ -359,188 +862,4 @@ func (tc *TextCleaner) copyToClipboard() {
 	text, _ := tc.outputBuffer.GetText(startIter, endIter, true)
 
 	clipboard.SetText(text)
-}
-
-// addToPipeline adds the current operation to the pipeline
-func (tc *TextCleaner) addToPipeline() {
-	operationName := tc.operationBox.GetActiveText()
-	arg1, _ := tc.argument1.GetText()
-	arg2, _ := tc.argument2.GetText()
-	lineBased := tc.lineBasedCheckbox.GetActive()
-
-	pipeOp := PipelineOperation{
-		Name:      operationName,
-		Arg1:      arg1,
-		Arg2:      arg2,
-		LineBased: lineBased,
-	}
-
-	tc.pipeline = append(tc.pipeline, pipeOp)
-	tc.refreshPipelineList()
-	tc.processText()
-
-	// Clear arguments and checkbox for next operation
-	tc.argument1.SetText("")
-	tc.argument2.SetText("")
-	tc.lineBasedCheckbox.SetActive(false)
-}
-
-// removeFromPipeline removes the selected operation from the pipeline
-func (tc *TextCleaner) removeFromPipeline() {
-	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
-		return
-	}
-
-	// Remove the operation
-	tc.pipeline = append(tc.pipeline[:tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1:]...)
-	tc.selectedPipeline = -1
-	tc.refreshPipelineList()
-	tc.processText()
-}
-
-// moveOperationUp moves the selected operation up in the pipeline
-func (tc *TextCleaner) moveOperationUp() {
-	if tc.selectedPipeline <= 0 || tc.selectedPipeline >= len(tc.pipeline) {
-		return
-	}
-
-	// Swap with previous operation
-	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline-1] = tc.pipeline[tc.selectedPipeline-1], tc.pipeline[tc.selectedPipeline]
-
-	tc.selectedPipeline--
-	tc.refreshPipelineList()
-	tc.processText()
-}
-
-// moveOperationDown moves the selected operation down in the pipeline
-func (tc *TextCleaner) moveOperationDown() {
-	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline)-1 {
-		return
-	}
-
-	// Swap with next operation
-	tc.pipeline[tc.selectedPipeline], tc.pipeline[tc.selectedPipeline+1] = tc.pipeline[tc.selectedPipeline+1], tc.pipeline[tc.selectedPipeline]
-
-	tc.selectedPipeline++
-	tc.refreshPipelineList()
-	tc.processText()
-}
-
-// refreshPipelineList refreshes the pipeline list display
-func (tc *TextCleaner) refreshPipelineList() {
-	// Clear existing rows
-	tc.pipelineListBox.GetChildren().Foreach(func(item interface{}) {
-		widget := item.(*gtk.Widget)
-		tc.pipelineListBox.Remove(widget)
-	})
-
-	// Add new rows
-	for _, pipeOp := range tc.pipeline {
-		label := pipeOp.Name
-		if pipeOp.Arg1 != "" {
-			label += " (" + pipeOp.Arg1
-			if pipeOp.Arg2 != "" {
-				label += ", " + pipeOp.Arg2
-			}
-			label += ")"
-		}
-		if pipeOp.LineBased {
-			label += " [Line-based]"
-		}
-
-		row, _ := gtk.LabelNew(label)
-		row.SetXAlign(0) // Left align
-		row.SetMarginStart(5)
-		row.SetMarginEnd(5)
-		row.SetMarginTop(3)
-		row.SetMarginBottom(3)
-
-		tc.pipelineListBox.Add(row)
-	}
-
-	tc.pipelineListBox.ShowAll()
-
-	// Restore selection if valid
-	if tc.selectedPipeline >= 0 && tc.selectedPipeline < len(tc.pipeline) {
-		row := tc.pipelineListBox.GetRowAtIndex(tc.selectedPipeline)
-		tc.pipelineListBox.SelectRow(row)
-	}
-
-	tc.updateButtonStates()
-}
-
-// updatePipelineSelection updates the selected pipeline index and displays intermediate output
-func (tc *TextCleaner) updatePipelineSelection() {
-	selectedRow := tc.pipelineListBox.GetSelectedRow()
-	if selectedRow != nil {
-		tc.selectedPipeline = selectedRow.GetIndex()
-	} else {
-		tc.selectedPipeline = -1
-	}
-	tc.updateButtonStates()
-	// Update output to show result up to selected operation
-	tc.processTextUpTo(tc.selectedPipeline)
-}
-
-// updateButtonStates updates the enabled/disabled state of pipeline buttons
-func (tc *TextCleaner) updateButtonStates() {
-	hasSelection := tc.selectedPipeline >= 0 && tc.selectedPipeline < len(tc.pipeline)
-	tc.removeButton.SetSensitive(hasSelection)
-	tc.updateButton.SetSensitive(hasSelection)
-
-	canMoveUp := hasSelection && tc.selectedPipeline > 0
-	tc.moveUpButton.SetSensitive(canMoveUp)
-
-	canMoveDown := hasSelection && tc.selectedPipeline < len(tc.pipeline)-1
-	tc.moveDownButton.SetSensitive(canMoveDown)
-}
-
-// loadOperationForEdit loads the selected operation into the toolbar for editing
-func (tc *TextCleaner) loadOperationForEdit() {
-	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
-		return
-	}
-
-	pipeOp := tc.pipeline[tc.selectedPipeline]
-
-	// Find and set the operation in the combo box
-	operations := GetOperations()
-	for i, op := range operations {
-		if op.Name == pipeOp.Name {
-			tc.operationBox.SetActive(i)
-			break
-		}
-	}
-
-	// Set the arguments
-	tc.argument1.SetText(pipeOp.Arg1)
-	tc.argument2.SetText(pipeOp.Arg2)
-	tc.lineBasedCheckbox.SetActive(pipeOp.LineBased)
-}
-
-// updateSelectedOperation updates the selected operation with current toolbar values
-func (tc *TextCleaner) updateSelectedOperation() {
-	if tc.selectedPipeline < 0 || tc.selectedPipeline >= len(tc.pipeline) {
-		return
-	}
-
-	operationName := tc.operationBox.GetActiveText()
-	arg1, _ := tc.argument1.GetText()
-	arg2, _ := tc.argument2.GetText()
-	lineBased := tc.lineBasedCheckbox.GetActive()
-
-	tc.pipeline[tc.selectedPipeline] = PipelineOperation{
-		Name:      operationName,
-		Arg1:      arg1,
-		Arg2:      arg2,
-		LineBased: lineBased,
-	}
-
-	tc.refreshPipelineList()
-	tc.processText()
-
-	// Clear arguments and checkbox
-	tc.argument1.SetText("")
-	tc.argument2.SetText("")
-	tc.lineBasedCheckbox.SetActive(false)
 }
