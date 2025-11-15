@@ -21,8 +21,9 @@ import (
 
 // Operation represents a text transformation operation
 type Operation struct {
-	Name string
-	Func func(input, arg1, arg2 string) string
+	Name        string
+	Description string
+	Func        func(input, arg1, arg2 string) string
 }
 
 // PipelineNode represents a node in the tree-based operation pipeline
@@ -42,169 +43,169 @@ type PipelineNode struct {
 func GetOperations() []Operation {
 	return []Operation{
 		// Identity (no-op) operation
-		{"Identity", identity},
+		{"Identity", "Returns input unchanged (no-op)", identity},
 
 		// Basic case operations
-		{"Uppercase", uppercase},
-		{"Lowercase", lowercase},
-		{"Titlecase", titlecase},
+		{"Uppercase", "Convert all text to uppercase", uppercase},
+		{"Lowercase", "Convert all text to lowercase", lowercase},
+		{"Titlecase", "Convert text to title case", titlecase},
 
 		// Whitespace operations
-		{"Trim", trim},
-		{"Trim Left", trimLeft},
-		{"Trim Right", trimRight},
-		{"Normalize Whitespace", normalizeWhitespace},
+		{"Trim", "Remove leading and trailing whitespace", trim},
+		{"Trim Left", "Remove leading whitespace only", trimLeft},
+		{"Trim Right", "Remove trailing whitespace only", trimRight},
+		{"Normalize Whitespace", "Collapse multiple spaces to single space", normalizeWhitespace},
 
 		// Basic string operations
-		{"Replace Text", replaceText},
-		{"Add Prefix", addPrefix},
-		{"Add Suffix", addSuffix},
-		{"Remove Prefix", removePrefix},
-		{"Remove Suffix", removeSuffix},
-		{"Surround Text", surroundText},
+		{"Replace Text", "Replace all occurrences of text (arg1→arg2)", replaceText},
+		{"Add Prefix", "Add text to the beginning (arg1)", addPrefix},
+		{"Add Suffix", "Add text to the end (arg1)", addSuffix},
+		{"Remove Prefix", "Remove text from beginning (arg1)", removePrefix},
+		{"Remove Suffix", "Remove text from end (arg1)", removeSuffix},
+		{"Surround Text", "Wrap text with prefix and suffix (arg1, arg2)", surroundText},
 
 		// Character extraction
-		{"Left Characters", leftCharacters},
-		{"Right Characters", rightCharacters},
-		{"Mid Characters", midCharacters},
+		{"Left Characters", "Extract N characters from left (arg1=count)", leftCharacters},
+		{"Right Characters", "Extract N characters from right (arg1=count)", rightCharacters},
+		{"Mid Characters", "Extract characters from middle (arg1=pos, arg2=count)", midCharacters},
 
 		// Text manipulation
-		{"Split Format", splitFormat},
+		{"Split Format", "Split by delimiter and reformat (arg1=delim, arg2=format)", splitFormat},
 
 		// HTML operations
-		{"HTML Decode", htmlDecode},
-		{"HTML Encode", htmlEncode},
-		{"Strip Tags", stripTags},
-		{"Find HTML Links", findHtmlLinks},
-		{"Select HTML", selectHtml},
+		{"HTML Decode", "Decode HTML entities to text", htmlDecode},
+		{"HTML Encode", "Encode text to HTML entities", htmlEncode},
+		{"Strip Tags", "Remove all HTML/XML tags", stripTags},
+		{"Find HTML Links", "Extract links from HTML (arg1=format)", findHtmlLinks},
+		{"Select HTML", "Select elements using CSS selector (arg1=selector)", selectHtml},
 
 		// JSON operations
-		{"Select JSON", selectJson},
+		{"Select JSON", "Extract JSON data using path notation (arg1=path)", selectJson},
 
 		// Regex operations
-		{"Keep Match Lines", keepMatchLines},
-		{"Remove Match Lines", removeMatchLines},
-		{"Match Text", matchText},
-		{"Replace Full", replaceFull},
+		{"Keep Match Lines", "Keep only lines matching regex (arg1=pattern)", keepMatchLines},
+		{"Remove Match Lines", "Remove lines matching regex (arg1=pattern)", removeMatchLines},
+		{"Match Text", "Find all regex matches (arg1=pattern)", matchText},
+		{"Replace Full", "Regex find and replace (arg1=pattern, arg2=replacement)", replaceFull},
 
 		// Math operations
-		{"Calculate", calculate},
+		{"Calculate", "Evaluate mathematical expressions in text", calculate},
 
 		// Phase 1: Line Operations
-		{"Sort Lines", sortLines},
-		{"Number Lines", numberLines},
-		{"Randomize Lines", randomizeLines},
-		{"Invert Lines", invertLines},
-		{"Deduplicate Lines", deduplicateLines},
-		{"Filter Blank Lines", filterBlankLines},
-		{"Filter Lines by Length", filterLinesByLength},
+		{"Sort Lines", "Sort lines alphabetically (arg1=options: n,r,i)", sortLines},
+		{"Number Lines", "Add line numbers (arg1=start, arg2=format)", numberLines},
+		{"Randomize Lines", "Shuffle lines randomly", randomizeLines},
+		{"Invert Lines", "Reverse the order of lines", invertLines},
+		{"Deduplicate Lines", "Remove duplicate lines, keep first", deduplicateLines},
+		{"Filter Blank Lines", "Remove empty or whitespace-only lines", filterBlankLines},
+		{"Filter Lines by Length", "Keep lines within length range (arg1=min, arg2=max)", filterLinesByLength},
 
 		// Phase 2: Text Formatting
-		{"Wrap Text", wrapText},
-		{"Rewrap Text", rewrapText},
-		{"Make Paragraphs", makeParagraphs},
-		{"Quote Text", quoteText},
-		{"Indent Text", indentText},
-		{"Unindent Text", unindentText},
-		{"Center Text", centerText},
+		{"Wrap Text", "Wrap text at column width (arg1=width, default 80)", wrapText},
+		{"Rewrap Text", "Unwrap and rewrap at width (arg1=width)", rewrapText},
+		{"Make Paragraphs", "Join lines into paragraphs with blank separators", makeParagraphs},
+		{"Quote Text", "Add prefix to each line (arg1=prefix, default '> ')", quoteText},
+		{"Indent Text", "Add indentation to each line (arg1=indent)", indentText},
+		{"Unindent Text", "Remove common leading whitespace", unindentText},
+		{"Center Text", "Center each line within width (arg1=width)", centerText},
 
 		// Phase 3: Case & Characters
-		{"Capitalize Sentences", capitalizeSentences},
-		{"Randomcase", randomcase},
-		{"Strip Diacritics", stripDiacritics},
-		{"Reverse Text", reverseText},
-		{"Reverse Words", reverseWords},
-		{"Reverse Lines", reverseLines},
-		{"Slugify", slugify},
-		{"Smart Quotes", smartQuotes},
-		{"Straight Quotes", straightQuotes},
+		{"Capitalize Sentences", "Capitalize first letter of each sentence", capitalizeSentences},
+		{"Randomcase", "Randomly capitalize or lowercase each letter", randomcase},
+		{"Strip Diacritics", "Remove accents and diacritical marks", stripDiacritics},
+		{"Reverse Text", "Reverse entire text character by character", reverseText},
+		{"Reverse Words", "Reverse characters in each word", reverseWords},
+		{"Reverse Lines", "Reverse characters in each line", reverseLines},
+		{"Slugify", "Create URL-safe slug from text", slugify},
+		{"Smart Quotes", "Convert straight quotes to curly quotes", smartQuotes},
+		{"Straight Quotes", "Convert curly quotes to straight quotes", straightQuotes},
 
 		// Phase 4: Encoding & Dates
-		{"Base64 Encode", base64Encode},
-		{"Base64 Decode", base64Decode},
-		{"URL Encode", urlEncode},
-		{"URL Decode", urlDecode},
-		{"Hex Encode", hexEncode},
-		{"Hex Decode", hexDecode},
-		{"ROT13", rot13},
-		{"Escape Quotes", escapeQuotes},
-		{"Unescape Quotes", unescapeQuotes},
-		{"Insert Date/Time", insertDateTime},
+		{"Base64 Encode", "Encode text as base64", base64Encode},
+		{"Base64 Decode", "Decode base64-encoded text", base64Decode},
+		{"URL Encode", "Percent-encode text for URLs", urlEncode},
+		{"URL Decode", "Decode percent-encoded URLs", urlDecode},
+		{"Hex Encode", "Convert text to hexadecimal", hexEncode},
+		{"Hex Decode", "Convert hexadecimal to text", hexDecode},
+		{"ROT13", "Apply ROT13 cipher to text", rot13},
+		{"Escape Quotes", "Escape quote characters for strings", escapeQuotes},
+		{"Unescape Quotes", "Unescape escaped quote characters", unescapeQuotes},
+		{"Insert Date/Time", "Insert current date/time (arg1=format)", insertDateTime},
 
 		// Phase 5: Markdown/HTML
-		{"URLs to Hyperlinks", urlsToHyperlinks},
-		{"Extract URLs", extractUrls},
-		{"Extract Emails", extractEmails},
-		{"Extract Numbers", extractNumbers},
+		{"URLs to Hyperlinks", "Convert plain URLs to HTML links (arg1=format)", urlsToHyperlinks},
+		{"Extract URLs", "Find and extract all URLs from text", extractUrls},
+		{"Extract Emails", "Find and extract all email addresses", extractEmails},
+		{"Extract Numbers", "Find and extract all numbers from text", extractNumbers},
 
 		// Phase 6: Advanced Regex
-		{"Extract with Groups", extractWithGroups},
-		{"Replace with Groups", replaceWithGroups},
-		{"Split by Regex", splitByRegex},
-		{"Match Count", matchCount},
+		{"Extract with Groups", "Extract regex matches with groups (arg1=pattern, arg2=template)", extractWithGroups},
+		{"Replace with Groups", "Replace using regex groups (arg1=pattern, arg2=template)", replaceWithGroups},
+		{"Split by Regex", "Split text by regex pattern (arg1=pattern, arg2=delimiter)", splitByRegex},
+		{"Match Count", "Count number of regex matches (arg1=pattern)", matchCount},
 
 		// Phase 7: Math & Numbers
-		{"Format Numbers", formatNumbersOperation},
-		{"Round Numbers", roundNumbers},
-		{"Sum Numbers", sumNumbers},
+		{"Format Numbers", "Format numbers with decimals (arg1=decimals, arg2=separator)", formatNumbersOperation},
+		{"Round Numbers", "Round all numbers to decimals (arg1=decimals)", roundNumbers},
+		{"Sum Numbers", "Extract and sum all numbers in text", sumNumbers},
 
 		// Phase 8: List & Extraction
-		{"Join List", joinList},
-		{"Remove Control Characters", removeControlCharacters},
-		{"Count Occurrences", countOccurrences},
-		{"Keep Lines Containing", keepLinesContaining},
-		{"Remove Lines Containing", removeLinesContaining},
-		{"Truncate Text", truncateText},
+		{"Join List", "Join lines with delimiter (arg1=delimiter)", joinList},
+		{"Remove Control Characters", "Remove non-printable control characters", removeControlCharacters},
+		{"Count Occurrences", "Count occurrences of string (arg1=search)", countOccurrences},
+		{"Keep Lines Containing", "Keep lines with text (arg1=search, arg2=flags)", keepLinesContaining},
+		{"Remove Lines Containing", "Remove lines with text (arg1=search, arg2=flags)", removeLinesContaining},
+		{"Truncate Text", "Truncate to max length (arg1=length, arg2=ellipsis)", truncateText},
 
 		// Phase 9: Conditional Operations
-		{"Is Empty", isEmpty},
-		{"Has Pattern", hasPattern},
-		{"Starts With", startsWith},
+		{"Is Empty", "Returns 'true' if empty/whitespace, else 'false'", isEmpty},
+		{"Has Pattern", "Returns 'true' if matches pattern (arg1=pattern)", hasPattern},
+		{"Starts With", "Returns 'true' if starts with text (arg1=text)", startsWith},
 
 		// Phase 10: List Processing
-		{"Unique Values", uniqueValues},
-		{"Most Common", mostCommon},
-		{"Least Common", leastCommon},
-		{"Reverse Lines", reverseLinesOrder},
-		{"Group By Pattern", groupByPattern},
+		{"Unique Values", "Remove duplicates (arg1=delimiter)", uniqueValues},
+		{"Most Common", "Find most frequent item (arg1=delimiter)", mostCommon},
+		{"Least Common", "Find least frequent item (arg1=delimiter)", leastCommon},
+		{"Reverse Lines", "Reverse the order of lines", reverseLinesOrder},
+		{"Group By Pattern", "Group lines by regex match (arg1=pattern)", groupByPattern},
 
 		// Phase 11: Advanced Text Operations
-		{"Word Count", wordCount},
-		{"Character Count", characterCount},
-		{"Line Count", lineCount},
-		{"Text Statistics", textStatistics},
-		{"Min Word Length", minWordLength},
-		{"Max Word Length", maxWordLength},
-		{"Average Word Length", averageWordLength},
+		{"Word Count", "Count words, characters, and lines", wordCount},
+		{"Character Count", "Count occurrences of character (arg1=char)", characterCount},
+		{"Line Count", "Count total number of lines", lineCount},
+		{"Text Statistics", "Show detailed text statistics", textStatistics},
+		{"Min Word Length", "Find minimum word length", minWordLength},
+		{"Max Word Length", "Find maximum word length", maxWordLength},
+		{"Average Word Length", "Calculate average word length", averageWordLength},
 
 		// Phase 12: Advanced Pattern Operations
-		{"Whole Word Match", wholeWordMatch},
-		{"Case Sensitive Find", caseSensitiveFind},
-		{"Multi-line Pattern", multilinePattern},
-		{"Look-ahead Pattern", lookaheadPattern},
-		{"Look-behind Pattern", lookbehindPattern},
-		{"Conditional Replace", conditionalReplace},
+		{"Whole Word Match", "Find whole word matches only (arg1=word)", wholeWordMatch},
+		{"Case Sensitive Find", "Count case-sensitive matches (arg1=search)", caseSensitiveFind},
+		{"Multi-line Pattern", "Apply multiline regex (arg1=pattern)", multilinePattern},
+		{"Look-ahead Pattern", "Match text followed by pattern (arg1, arg2)", lookaheadPattern},
+		{"Look-behind Pattern", "Match text preceded by pattern (arg1, arg2)", lookbehindPattern},
+		{"Conditional Replace", "Replace based on conditions (arg1=pattern, arg2=replacement)", conditionalReplace},
 
 		// Phase 13: Transformation Macros
-		{"Chain Operations", chainOperations},
-		{"Repeat Operation", repeatOperation},
-		{"Swap Pairs", swapPairs},
-		{"Reverse Order Items", reverseOrderItems},
+		{"Chain Operations", "Chain multiple operations (arg1=op1|op2|op3)", chainOperations},
+		{"Repeat Operation", "Repeat operation N times (arg1=op, arg2=count)", repeatOperation},
+		{"Swap Pairs", "Swap pairs of items (arg1=delimiter)", swapPairs},
+		{"Reverse Order Items", "Reverse order of items (arg1=delimiter)", reverseOrderItems},
 
 		// Phase 14: HTML/Markdown Advanced
-		{"HTML to Markdown", htmlToMarkdown},
-		{"Markdown to HTML", markdownToHTML},
-		{"Extract Text from HTML", extractTextFromHTML},
-		{"Create Markdown Table", createMarkdownTable},
-		{"Parse YAML Front Matter", parseYAMLFrontMatter},
-		{"Markdown Link Format", markdownLinkFormat},
+		{"HTML to Markdown", "Convert HTML to Markdown (simplified)", htmlToMarkdown},
+		{"Markdown to HTML", "Convert Markdown to HTML (simplified)", markdownToHTML},
+		{"Extract Text from HTML", "Extract all text content from HTML", extractTextFromHTML},
+		{"Create Markdown Table", "Create table from delimited data (arg1=col, arg2=row)", createMarkdownTable},
+		{"Parse YAML Front Matter", "Extract YAML front matter from document", parseYAMLFrontMatter},
+		{"Markdown Link Format", "Convert markdown links to format (arg1=format)", markdownLinkFormat},
 
 		// Phase 15: Unicode & Special Characters
-		{"Unicode Names", unicodeNames},
-		{"Convert Unicode Escapes", convertUnicodeEscapes},
-		{"Escape Unicode", escapeUnicode},
-		{"Show Invisible Characters", showInvisibleCharacters},
-		{"Normalize Unicode", normalizeUnicode},
+		{"Unicode Names", "Show Unicode names for non-ASCII characters", unicodeNames},
+		{"Convert Unicode Escapes", "Convert \\uXXXX escapes to characters", convertUnicodeEscapes},
+		{"Escape Unicode", "Convert characters to \\uXXXX format", escapeUnicode},
+		{"Show Invisible Characters", "Display invisible characters visibly", showInvisibleCharacters},
+		{"Normalize Unicode", "Apply Unicode normalization (simplified)", normalizeUnicode},
 	}
 }
 

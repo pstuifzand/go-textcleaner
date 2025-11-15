@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 const (
@@ -460,13 +462,18 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	titleLabel.SetMarkup("<b>Operations</b>")
 	paletteBox.PackStart(titleLabel, false, false, 0)
 
+	// Search entry
+	searchEntry, _ := gtk.SearchEntryNew()
+	searchEntry.SetPlaceholderText("Search operations...")
+	paletteBox.PackStart(searchEntry, false, false, 0)
+
 	// Scrolled window for the palette
 	scrolledWindow, _ := gtk.ScrolledWindowNew(nil, nil)
 	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	scrolledWindow.SetSizeRequest(200, -1)
 
-	// Create list store with two columns: display name and operation name
-	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING)
+	// Create list store with three columns: display name, operation name, description
+	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
 
 	// Populate with all operations
 	operations := GetOperations()
@@ -474,16 +481,77 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 		iter := listStore.Append()
 		listStore.SetValue(iter, 0, op.Name)
 		listStore.SetValue(iter, 1, op.Name)
+		listStore.SetValue(iter, 2, op.Description)
 	}
+
+	// Create filter model
+	filterModel, _ := listStore.ToTreeModel()
+	filter, _ := filterModel.FilterNew(nil)
+
+	// Set up filter function
+	filter.SetVisibleFunc(func(model *gtk.TreeModel, iter *gtk.TreeIter) bool {
+		searchText, _ := searchEntry.GetText()
+		searchText = strings.TrimSpace(searchText)
+
+		// Show all if search is empty
+		if searchText == "" {
+			return true
+		}
+
+		// Get operation name and description
+		nameVal, _ := model.GetValue(iter, 0)
+		name, _ := nameVal.GetString()
+
+		descVal, _ := model.GetValue(iter, 2)
+		desc, _ := descVal.GetString()
+
+		// Fuzzy search on both name and description
+		searchTextLower := strings.ToLower(searchText)
+		nameLower := strings.ToLower(name)
+		descLower := strings.ToLower(desc)
+
+		// Use fuzzy matching
+		if fuzzy.MatchFold(searchTextLower, nameLower) || fuzzy.MatchFold(searchTextLower, descLower) {
+			return true
+		}
+
+		// Also do substring matching as fallback
+		if strings.Contains(nameLower, searchTextLower) || strings.Contains(descLower, searchTextLower) {
+			return true
+		}
+
+		return false
+	})
 
 	// Create tree view for the palette
 	treeView, _ := gtk.TreeViewNew()
 	tc.paletteTree = treeView
-	treeView.SetModel(listStore)
+	treeView.SetModel(filter)
 
-	// Add column for operation name
+	// Create custom cell renderer for two-line display
 	renderer, _ := gtk.CellRendererTextNew()
-	column, _ := gtk.TreeViewColumnNewWithAttribute("Operation", renderer, "text", 0)
+	renderer.SetProperty("ellipsize", 3) // PANGO_ELLIPSIZE_END
+
+	// Set cell data function to format with two lines
+	column, _ := gtk.TreeViewColumnNew()
+	column.PackStart(renderer, true)
+	column.SetCellDataFunc(renderer, func(layout *gtk.TreeViewColumn, cell *gtk.CellRenderer, model *gtk.TreeModel, iter *gtk.TreeIter) {
+		// Get name and description
+		nameVal, _ := model.GetValue(iter, 0)
+		name, _ := nameVal.GetString()
+
+		descVal, _ := model.GetValue(iter, 2)
+		desc, _ := descVal.GetString()
+
+		// Create two-line markup: name bold, description smaller and gray
+		markup := fmt.Sprintf("<b>%s</b>\n<small><span foreground='#666666'>%s</span></small>",
+			glib.MarkupEscapeText(name),
+			glib.MarkupEscapeText(desc))
+
+		cellRenderer := cell.(*gtk.CellRendererText)
+		cellRenderer.SetProperty("markup", markup)
+	})
+
 	treeView.AppendColumn(column)
 
 	// Set properties
@@ -493,6 +561,11 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	targetEntry, _ := gtk.TargetEntryNew("text/plain", gtk.TARGET_SAME_APP, 0)
 	targets := []gtk.TargetEntry{*targetEntry}
 	treeView.DragSourceSet(gdk.BUTTON1_MASK, targets, gdk.ACTION_COPY)
+
+	// Connect search entry to filter
+	searchEntry.Connect("search-changed", func() {
+		filter.Refilter()
+	})
 
 	scrolledWindow.Add(treeView)
 	paletteBox.PackStart(scrolledWindow, true, true, 0)
