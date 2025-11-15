@@ -742,7 +742,8 @@ func (tc *TextCleaner) setupDragAndDrop() {
 		}
 
 		// Get the drop position
-		path, pos := widget.GetDestRowAtPos(x, y)
+		path, pos, ok := widget.GetDestRowAtPos(x, y)
+		_ = ok // We proceed whether or not we got a valid position
 
 		var parentID string
 		if path != nil {
