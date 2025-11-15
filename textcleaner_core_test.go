@@ -549,3 +549,176 @@ func TestLargeTextProcessing(t *testing.T) {
 		}
 	}
 }
+
+// TestIndentNode tests indenting a node to become a child of previous sibling
+func TestIndentNode(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	// Create two root nodes
+	id1 := core.CreateNode("operation", "Op1", "Uppercase", "", "", "")
+	id2 := core.CreateNode("operation", "Op2", "Lowercase", "", "", "")
+
+	// Indent id2 to become child of id1
+	err := core.IndentNode(id2)
+	if err != nil {
+		t.Fatalf("Failed to indent node: %v", err)
+	}
+
+	// Verify id1 now has id2 as a child
+	node1 := core.GetNode(id1)
+	if len(node1.Children) != 1 {
+		t.Errorf("Expected 1 child, got %d", len(node1.Children))
+	}
+
+	if node1.Children[0].ID != id2 {
+		t.Errorf("Expected child to be id2, got %s", node1.Children[0].ID)
+	}
+
+	// Verify pipeline no longer contains id2 at root
+	pipeline := core.GetPipeline()
+	if len(pipeline) != 1 {
+		t.Errorf("Expected 1 root node, got %d", len(pipeline))
+	}
+}
+
+// TestUnindentNode tests unindenting a node to become sibling of parent
+func TestUnindentNode(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	// Create root node
+	id1 := core.CreateNode("operation", "Op1", "Uppercase", "", "", "")
+
+	// Add child to id1
+	id2, err := core.AddChildNode(id1, "operation", "Op2", "Lowercase", "", "", "")
+	if err != nil {
+		t.Fatalf("Failed to add child: %v", err)
+	}
+
+	// Unindent id2
+	err = core.UnindentNode(id2)
+	if err != nil {
+		t.Fatalf("Failed to unindent node: %v", err)
+	}
+
+	// Verify id1 has no children
+	node1 := core.GetNode(id1)
+	if len(node1.Children) != 0 {
+		t.Errorf("Expected 0 children, got %d", len(node1.Children))
+	}
+
+	// Verify pipeline has 2 root nodes
+	pipeline := core.GetPipeline()
+	if len(pipeline) != 2 {
+		t.Errorf("Expected 2 root nodes, got %d", len(pipeline))
+	}
+
+	// Verify id2 is now at root level after id1
+	if pipeline[1].ID != id2 {
+		t.Errorf("Expected second root node to be id2, got %s", pipeline[1].ID)
+	}
+}
+
+// TestMoveNodeUp tests moving a node up in sibling list
+func TestMoveNodeUp(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	// Create parent
+	parentID := core.CreateNode("operation", "Parent", "Uppercase", "", "", "")
+
+	// Add two children
+	child1, _ := core.AddChildNode(parentID, "operation", "Child1", "Lowercase", "", "", "")
+	child2, _ := core.AddChildNode(parentID, "operation", "Child2", "Uppercase", "", "", "")
+
+	// Move child2 up
+	err := core.MoveNodeUp(child2)
+	if err != nil {
+		t.Fatalf("Failed to move node up: %v", err)
+	}
+
+	// Verify order is swapped
+	parent := core.GetNode(parentID)
+	if len(parent.Children) != 2 {
+		t.Errorf("Expected 2 children, got %d", len(parent.Children))
+	}
+
+	if parent.Children[0].ID != child2 {
+		t.Errorf("Expected first child to be child2, got %s", parent.Children[0].ID)
+	}
+
+	if parent.Children[1].ID != child1 {
+		t.Errorf("Expected second child to be child1, got %s", parent.Children[1].ID)
+	}
+}
+
+// TestMoveNodeDown tests moving a node down in sibling list
+func TestMoveNodeDown(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	// Create parent
+	parentID := core.CreateNode("operation", "Parent", "Uppercase", "", "", "")
+
+	// Add two children
+	child1, _ := core.AddChildNode(parentID, "operation", "Child1", "Lowercase", "", "", "")
+	child2, _ := core.AddChildNode(parentID, "operation", "Child2", "Uppercase", "", "", "")
+
+	// Move child1 down
+	err := core.MoveNodeDown(child1)
+	if err != nil {
+		t.Fatalf("Failed to move node down: %v", err)
+	}
+
+	// Verify order is swapped
+	parent := core.GetNode(parentID)
+	if len(parent.Children) != 2 {
+		t.Errorf("Expected 2 children, got %d", len(parent.Children))
+	}
+
+	if parent.Children[0].ID != child2 {
+		t.Errorf("Expected first child to be child2, got %s", parent.Children[0].ID)
+	}
+
+	if parent.Children[1].ID != child1 {
+		t.Errorf("Expected second child to be child1, got %s", parent.Children[1].ID)
+	}
+}
+
+// TestCanIndentNode tests the CanIndentNode predicate
+func TestCanIndentNode(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	id1 := core.CreateNode("operation", "Op1", "Uppercase", "", "", "")
+	id2 := core.CreateNode("operation", "Op2", "Lowercase", "", "", "")
+
+	// Can indent id2 (has previous sibling)
+	if !core.CanIndentNode(id2) {
+		t.Error("Should be able to indent id2")
+	}
+
+	// Cannot indent id1 (no previous sibling)
+	if core.CanIndentNode(id1) {
+		t.Error("Should not be able to indent id1")
+	}
+
+	// Cannot indent root level node that doesn't exist
+	if core.CanIndentNode("nonexistent") {
+		t.Error("Should not be able to indent nonexistent node")
+	}
+}
+
+// TestCanUnindentNode tests the CanUnindentNode predicate
+func TestCanUnindentNode(t *testing.T) {
+	core := NewTextCleanerCore()
+
+	parentID := core.CreateNode("operation", "Parent", "Uppercase", "", "", "")
+	childID, _ := core.AddChildNode(parentID, "operation", "Child", "Lowercase", "", "", "")
+
+	// Can unindent child
+	if !core.CanUnindentNode(childID) {
+		t.Error("Should be able to unindent child")
+	}
+
+	// Cannot unindent root level node
+	if core.CanUnindentNode(parentID) {
+		t.Error("Should not be able to unindent root level node")
+	}
+}

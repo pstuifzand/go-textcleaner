@@ -37,6 +37,8 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdSelectNode(cmd.Params)
 	case "set_input_text":
 		return tc.cmdSetInputText(cmd.Params)
+	case "get_input_text":
+		return tc.cmdGetInputText(cmd.Params)
 	case "get_output_text":
 		return tc.cmdGetOutputText(cmd.Params)
 	case "get_pipeline":
@@ -47,6 +49,8 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdImportPipeline(cmd.Params)
 	case "get_node":
 		return tc.cmdGetNode(cmd.Params)
+	case "get_selected_node_id":
+		return tc.cmdGetSelectedNodeID(cmd.Params)
 	case "list_nodes":
 		return tc.cmdListNodes(cmd.Params)
 	default:
@@ -167,10 +171,25 @@ func (tc *TextCleanerCore) cmdSetInputText(params map[string]interface{}) string
 	})
 }
 
+// cmdGetInputText returns the current input text
+func (tc *TextCleanerCore) cmdGetInputText(params map[string]interface{}) string {
+	return tc.successResponse(map[string]interface{}{
+		"text": tc.GetInputText(),
+	})
+}
+
 // cmdGetOutputText returns the current output text
 func (tc *TextCleanerCore) cmdGetOutputText(params map[string]interface{}) string {
 	return tc.successResponse(map[string]interface{}{
 		"output": tc.GetOutputText(),
+	})
+}
+
+// cmdGetSelectedNodeID returns the currently selected node ID
+func (tc *TextCleanerCore) cmdGetSelectedNodeID(params map[string]interface{}) string {
+	nodeID := tc.GetSelectedNodeID()
+	return tc.successResponse(map[string]interface{}{
+		"node_id": nodeID,
 	})
 }
 

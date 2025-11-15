@@ -1,0 +1,286 @@
+================================================================================
+GUI ARCHITECTURE DIAGRAM - go-textcleaner
+================================================================================
+
+                           ╔═════════════════════════╗
+                           │   GTK3 Application      │
+                           │   (main.go)             │
+                           ╚═════════════════════════╝
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    │                 │                 │
+         ┌──────────▼─────────┐  ┌────▼────────────┐  ┌▼──────────────┐
+         │  TextCleaner       │  │                 │  │                │
+         │  (GUI Container)   │  │                 │  │                │
+         └────────┬───────────┘  │                 │  │                │
+                  │              │                 │  │                │
+      ┌───────────┴──────────────▼─────────────────▼──▼──────────────┐
+      │                    GTK Widget Tree                           │
+      ├────────────────────────────────────────────────────────────┤
+      │                                                             │
+      │  ┌─────────────────────────────────────────────────────┐   │
+      │  │           Main Window (gtk.Window)                 │   │
+      │  │                                                     │   │
+      │  │  ┌─────────────────────────────────────────────┐   │   │
+      │  │  │  Main Box (gtk.Box, VERTICAL)              │   │   │
+      │  │  │  ┌─────────────────────────────────────┐   │   │   │
+      │  │  │  │  Toolbar                           │   │   │   │
+      │  │  │  │  ┌────────────────────────────────┐│   │   │   │
+      │  │  │  │  │ Copy to Clipboard Button       ││   │   │   │
+      │  │  │  │  └────────────────────────────────┘│   │   │   │
+      │  │  │  └─────────────────────────────────────┘   │   │   │
+      │  │  │  ┌─────────────────────────────────────┐   │   │   │
+      │  │  │  │  Main Paned (HORIZONTAL)           │   │   │   │
+      │  │  │  │                                     │   │   │   │
+      │  │  │  │  ┌─────────────────────────────┐   │   │   │   │
+      │  │  │  │  │ LEFT: Pipeline Panel        │   │   │   │   │
+      │  │  │  │  │ ┌─────────────────────────┐ │   │   │   │   │
+      │  │  │  │  │ │ Node Controls           │ │   │   │   │   │
+      │  │  │  │  │ ├─────────────────────────┤ │   │   │   │   │
+      │  │  │  │  │ │ Node Type Combo         │ │   │   │   │   │
+      │  │  │  │  │ │ Operation Combo         │ │   │   │   │   │
+      │  │  │  │  │ │ Name Entry              │ │   │   │   │   │
+      │  │  │  │  │ │ Arg1, Arg2 Entries      │ │   │   │   │   │
+      │  │  │  │  │ │ Condition Entry         │ │   │   │   │   │
+      │  │  │  │  │ │ [Create] [Update] Btn   │ │   │   │   │   │
+      │  │  │  │  │ │ [Delete] [Add Child]    │ │   │   │   │   │
+      │  │  │  │  │ │ [Indent] [Unindent]     │ │   │   │   │   │
+      │  │  │  │  │ │ [Move Up] [Move Down]    │ │   │   │   │   │
+      │  │  │  │  │ └─────────────────────────┘ │   │   │   │   │
+      │  │  │  │  │ ┌─────────────────────────┐ │   │   │   │   │
+      │  │  │  │  │ │ Pipeline TreeView       │ │   │   │   │   │
+      │  │  │  │  │ │ (2-column TreeStore)    │ │   │   │   │   │
+      │  │  │  │  │ ├─────────────────────────┤ │   │   │   │   │
+      │  │  │  │  │ │ Col0: Display Text      │ │   │   │   │   │
+      │  │  │  │  │ │ Col1: Node ID           │ │   │   │   │   │
+      │  │  │  │  │ │                         │ │   │   │   │   │
+      │  │  │  │  │ │ [OP] Uppercase          │ │   │   │   │   │
+      │  │  │  │  │ │   [OP] Lowercase        │ │   │   │   │   │
+      │  │  │  │  │ │ [IF] Condition          │ │   │   │   │   │
+      │  │  │  │  │ │   [LOOP] ForEach        │ │   │   │   │   │
+      │  │  │  │  │ └─────────────────────────┘ │   │   │   │   │
+      │  │  │  │  └─────────────────────────────┘   │   │   │   │
+      │  │  │  │  ┌─────────────────────────────┐   │   │   │   │
+      │  │  │  │  │ RIGHT: Text Panes           │   │   │   │   │
+      │  │  │  │  │ ┌─────────────────────────┐ │   │   │   │   │
+      │  │  │  │  │ │ Input TextView          │ │   │   │   │   │
+      │  │  │  │  │ │ (Editable)              │ │   │   │   │   │
+      │  │  │  │  │ │                         │ │   │   │   │   │
+      │  │  │  │  │ │ Lorem ipsum dolor...    │ │   │   │   │   │
+      │  │  │  │  │ └─────────────────────────┘ │   │   │   │   │
+      │  │  │  │  │ ┌─────────────────────────┐ │   │   │   │   │
+      │  │  │  │  │ │ Output TextView         │ │   │   │   │   │
+      │  │  │  │  │ │ (Read-only)             │ │   │   │   │   │
+      │  │  │  │  │ │                         │ │   │   │   │   │
+      │  │  │  │  │ │ LOREM IPSUM DOLOR...    │ │   │   │   │   │
+      │  │  │  │  │ └─────────────────────────┘ │   │   │   │   │
+      │  │  │  │  └─────────────────────────────┘   │   │   │   │
+      │  │  │  └─────────────────────────────────────┘   │   │   │
+      │  │  └─────────────────────────────────────────────┘   │   │
+      │  └─────────────────────────────────────────────────────┘   │
+      └─────────────────────────────────────────────────────────────┘
+
+================================================================================
+DATA FLOW ARCHITECTURE
+================================================================================
+
+    ┌──────────────────────────────────────────────────────────────────┐
+    │                     GTK User Interaction                          │
+    └──────────────────────────────────────────────────────────────────┘
+                                 │
+                  ┌──────────────┼──────────────┐
+                  │              │              │
+          ┌───────▼───────┐ ┌───▼───────┐ ┌───▼────────┐
+          │ Tree Selection│ │ Button    │ │ Text Entry │
+          │ (TreeView)    │ │ Clicks    │ │ Changes    │
+          └───────┬───────┘ └───┬───────┘ └───┬────────┘
+                  │              │              │
+         ┌────────┴──────────────┼──────────────┴─────────┐
+         │   GTK Signal Dispatch                          │
+         └────────┬──────────────┼──────────────┬─────────┘
+                  │              │              │
+    ┌─────────────▼─┐  ┌─────────▼──────┐  ┌───▼──────────────┐
+    │"cursor-changed"│  │ "clicked"      │  │ "changed"        │
+    └────────┬──────┘  └────────┬───────┘  └────┬─────────────┘
+             │                  │               │
+    ┌────────▼──────┐  ┌────────▼────────┐  ┌──▼────────────┐
+    │updateTreeSel()│  │Handler Function │  │processText()  │
+    │openNodeForEd()│  │(specific to btn)│  │               │
+    └────────┬──────┘  └────────┬────────┘  └──┬─────────────┘
+             │                  │               │
+             └──────────────────┼───────────────┘
+                                │
+                    ┌───────────▼──────────────┐
+                    │   TextCleanerCore        │
+                    │   (Thread-Safe)          │
+                    ├──────────────────────────┤
+                    │ Methods:                 │
+                    │ ├─ CreateNode()          │
+                    │ ├─ UpdateNode()          │
+                    │ ├─ DeleteNode()          │
+                    │ ├─ GetNode()             │
+                    │ ├─ GetPipeline()         │
+                    │ ├─ SetInputText()        │
+                    │ ├─ GetOutputText()       │
+                    │ ├─ SelectNode()          │
+                    │ └─ [Tree ops...]         │
+                    └────────┬──────────────────┘
+                             │
+                ┌────────────▼────────────┐
+                │   Core State Updates    │
+                ├────────────────────────┤
+                │ pipeline []             │
+                │ selectedNodeID          │
+                │ inputText               │
+                │ outputText              │
+                └────────────┬────────────┘
+                             │
+              ┌──────────────▼───────────────┐
+              │    refreshUIFromCore()       │
+              │    (Refresh cycle)           │
+              └──────┬──────────────┬────────┘
+                     │              │
+         ┌───────────▼─┐  ┌────────▼──────────┐
+         │refreshPipe- │  │updateTextDisplay()│
+         │lineTree()   │  │                   │
+         │             │  │                   │
+         │ Rebuilds    │  │ Updates output    │
+         │ tree view   │  │ from core         │
+         │ from core   │  │                   │
+         └────────┬────┘  └────────┬──────────┘
+                  │                │
+         ┌────────┴────────┬──────┬┴────────────┐
+         │                 │      │             │
+    ┌────▼─────┐  ┌───────▼───┐ │          ┌──▼──────┐
+    │TreeView   │  │Button     │ │          │OutputBuf│
+    │Updated    │  │States     │ │          │Updated  │
+    │           │  │Updated    │ │          │         │
+    │           │  │           │ │          │         │
+    │ [OP] Up   │  │[Update] En│ │          │ Result  │
+    │ [OP] Low  │  │[Delete] En│ │          │ Text    │
+    │ [IF] Cond │  │[+Child] En│ │          │         │
+    └───────────┘  └───────────┘ │          └─────────┘
+                                  │
+                              ┌───▼────────────┐
+                              │updateButtonSt()│
+                              │Enables/disables│
+                              │buttons based   │
+                              │on selection    │
+                              └────────────────┘
+
+================================================================================
+EDIT OPERATION SEQUENCE
+================================================================================
+
+Double-Click on Node in Tree:
+
+    User double-clicks [OP] Uppercase
+             │
+             ▼
+    GTK TreeView fires "row-activated" signal
+             │
+             ▼
+    setupEventHandlers() had registered: tc.pipelineTree.Connect("row-activated", openNodeForEditing)
+             │
+             ▼
+    openNodeForEditing() called
+    ├─ Get tree selection
+    ├─ Extract node ID from tree column 1
+    ├─ Call core.GetNode(nodeID) → *PipelineNode
+    ├─ Call loadNodeToUI(node)
+    │  ├─ Set nodeTypeCombo to "Operation"
+    │  ├─ Set operationCombo to "Uppercase"
+    │  ├─ Set nodeNameEntry to node.Name
+    │  ├─ Set argument1/argument2 to node.Arg1/Arg2
+    │  └─ Call updateNodeTypeUI() to show/hide fields
+    └─ Call updateButtonStates()
+             │
+             ▼
+    User sees form populated with node data
+             │
+             ▼
+    User modifies fields (e.g., change name, change operation)
+             │
+             ▼
+    User clicks "Update Node" button
+             │
+             ▼
+    GTK Button fires "clicked" signal
+             │
+             ▼
+    setupEventHandlers() had registered: tc.editNodeButton.Connect("clicked", updateSelectedNode)
+             │
+             ▼
+    updateSelectedNode() called
+    ├─ Collect values from form controls
+    │  ├─ Get nodeType from nodeTypeCombo
+    │  ├─ Get name from nodeNameEntry
+    │  ├─ Get operation/args from operationCombo/entries
+    │  └─ Get condition from conditionEntry
+    ├─ Call core.UpdateNode(nodeID, name, operation, arg1, arg2, condition)
+    │  └─ Core updates internal state
+    ├─ Call refreshPipelineTree()
+    │  └─ Tree view rebuilt from core state
+    └─ Call updateTextDisplay()
+       └─ Output updated from core
+             │
+             ▼
+    User sees updated tree and new output
+
+================================================================================
+THREADING MODEL
+================================================================================
+
+GTK Main Thread (Only):
+├─ All GUI operations run here
+├─ TreeView updates
+├─ Button clicks
+├─ Text entry events
+└─ Can call core methods (thread-safe via mutex)
+
+TextCleanerCore (Thread-Safe):
+├─ Protected by sync.RWMutex
+├─ All public methods use locking
+├─ Write ops use Lock()
+├─ Read ops use RLock()
+└─ Safe for concurrent access
+
+Socket Server (Background Thread):
+├─ Listens for connections
+├─ Executes commands on core
+├─ After command completes:
+│  └─ Calls update callback
+│     └─ glib.IdleAdd() queues GUI refresh on main thread
+└─ GUI updates happen on GTK thread
+
+Result: Full thread safety without race conditions
+
+================================================================================
+KEY DESIGN PRINCIPLES
+================================================================================
+
+1. UNIDIRECTIONAL DATA FLOW
+   User Input → Core State → GUI Refresh
+   Never: UI ← → Core
+
+2. TREE IS ALWAYS A VIEW
+   Tree is rebuilt from core state
+   Never directly modify tree
+   Always: Update Core → Refresh Tree
+
+3. SINGLE SOURCE OF TRUTH
+   Core is the only source of truth
+   GUI reflects current core state
+   On any update: Get from Core, Update Core, Refresh All
+
+4. SIGNAL-BASED INTERACTION
+   GTK signals drive all interaction
+   Signals connect to handler functions
+   Handlers update core, then refresh UI
+
+5. BUTTON STATE FOLLOWS LOGIC
+   updateButtonStates() called after every operation
+   Buttons enabled/disabled based on what's possible
+   Prevents invalid operations
+
+================================================================================

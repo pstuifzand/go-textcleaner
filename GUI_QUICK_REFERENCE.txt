@@ -1,0 +1,191 @@
+================================================================================
+GUI IMPLEMENTATION QUICK REFERENCE - go-textcleaner
+================================================================================
+
+KEY FINDING: Double-click editing is ALREADY IMPLEMENTED!
+Signal handler at line 518: tc.pipelineTree.Connect("row-activated", openNodeForEditing)
+
+================================================================================
+MAIN COMPONENTS
+================================================================================
+
+TextCleaner struct (main.go:20-45)
+├── core: *TextCleanerCore (text processing logic)
+├── window: *gtk.Window (main window)
+├── pipelineTree: *gtk.TreeView (node hierarchy display)
+├── treeStore: *gtk.TreeStore (tree data backend)
+└── [form controls for editing nodes]
+
+================================================================================
+TREE VIEW STRUCTURE
+================================================================================
+
+TreeStore: 2-column data model
+├── Column 0: Display text (e.g., "[OP] Uppercase")
+└── Column 1: Node ID (e.g., "node_0")
+
+PipelineNode struct (processor.go:29-39)
+├── ID: string (unique identifier)
+├── Type: string ("operation", "if", "foreach", "group")
+├── Name: string (display name)
+├── Operation: string (operation type)
+├── Arg1, Arg2: string (arguments)
+├── Condition: string (regex for If nodes)
+├── Children: []PipelineNode (child nodes)
+└── ElseChildren: []PipelineNode (else branch for If)
+
+================================================================================
+KEY INTERACTION FLOW (Double-Click to Edit)
+================================================================================
+
+1. USER ACTION: Double-clicks node in tree
+   ↓
+2. GTK SIGNAL: "row-activated" fired
+   ↓
+3. HANDLER: openNodeForEditing() [line 591]
+   ├── Gets node ID from tree column 1
+   ├── Fetches node from core: core.GetNode(nodeID)
+   └── Populates form via loadNodeToUI(node)
+   ↓
+4. USER EDITS: Modifies fields in control form
+   ↓
+5. USER SAVES: Clicks "Update Node" button
+   ↓
+6. HANDLER: updateSelectedNode() [line 712]
+   ├── Collects values from form
+   ├── Updates core: core.UpdateNode(nodeID, ...)
+   ├── Refreshes tree: refreshPipelineTree()
+   └── Updates output: updateTextDisplay()
+
+================================================================================
+CRITICAL FUNCTIONS
+================================================================================
+
+SELECTION & NAVIGATION:
+  openNodeForEditing() [591]      → Load node into form on double-click
+  updateTreeSelection() [612]     → Handle single-click selection
+  loadNodeToUI() [636]            → Populate form from node data
+  updateNodeTypeUI() [563]        → Show/hide fields based on type
+
+EDITING & UPDATES:
+  createNewNode() [670]           → Create new root node
+  updateSelectedNode() [712]      → Save edited node to core
+  deleteSelectedNode() [757]      → Delete node
+
+TREE OPERATIONS:
+  indentSelectedNode() [818]      → Make selected a child of prev sibling
+  unindentSelectedNode() [834]    → Move selected to parent's level
+  moveSelectedNodeUp() [850]      → Reorder up
+  moveSelectedNodeDown() [866]    → Reorder down
+
+TREE DISPLAY:
+  refreshPipelineTree() [904]     → Rebuild entire tree from core
+  addNodeToTree() [961]           → Recursively add node to tree
+  getNodeDisplayText() [981]      → Generate human-readable text
+
+================================================================================
+GTK PATTERNS USED
+================================================================================
+
+Signal Connection:
+  widget.Connect(signalName, callback)
+
+TreeView Operations:
+  selection := treeView.GetSelection()
+  _, iter, ok := selection.GetSelected()
+  value, _ := treeStore.GetValue(iter, column)
+  treeStore.SetValue(iter, column, value)
+
+Button/Entry Operations:
+  button.SetSensitive(bool)
+  entry.GetText() / entry.SetText(text)
+  combo.GetActiveText() / combo.SetActive(index)
+
+================================================================================
+DATA FLOW SUMMARY
+================================================================================
+
+USER INPUT → GTK SIGNAL → HANDLER FUNCTION → CORE OPERATION → 
+REFRESH UI ← refreshPipelineTree() ← updateTextDisplay() ← core state
+
+KEY PRINCIPLE: Never modify tree directly. Always:
+  1. Update core
+  2. Refresh tree from core
+  3. This ensures GUI always matches core state
+
+================================================================================
+MAIN CALLBACKS WIRED UP (setupEventHandlers, line 496)
+================================================================================
+
+Tree Interactions:
+  "cursor-changed" → updateTreeSelection()    [single-click]
+  "row-activated"  → openNodeForEditing()     [double-click]
+
+Button Clicks:
+  createNodeButton    → createNewNode()
+  editNodeButton      → updateSelectedNode()
+  deleteNodeButton    → deleteSelectedNode()
+  addChildButton      → addChildNode()
+  indentButton        → indentSelectedNode()
+  unindentButton      → unindentSelectedNode()
+  moveUpButton        → moveSelectedNodeUp()
+  moveDownButton      → moveSelectedNodeDown()
+
+Text Changes:
+  inputBuffer "changed"  → processText()    [real-time processing]
+
+================================================================================
+FILES & LOCATIONS
+================================================================================
+
+Main GUI:
+  /home/peter/work/go-textcleaner/main.go [1074 lines]
+
+Core Logic:
+  /home/peter/work/go-textcleaner/textcleaner_core.go
+  /home/peter/work/go-textcleaner/textcleaner_commands.go
+
+Operations & Data:
+  /home/peter/work/go-textcleaner/processor.go
+  /home/peter/work/go-textcleaner/textcleaner_socket.go [for persistence]
+
+Tests:
+  /home/peter/work/go-textcleaner/textcleaner_core_test.go
+  /home/peter/work/go-textcleaner/textcleaner_socket_test.go
+
+Documentation:
+  /home/peter/work/go-textcleaner/TREE_IMPROVEMENTS.md [planned features]
+  /home/peter/work/go-textcleaner/GUI_ANALYSIS.md [generated]
+
+================================================================================
+TO ENHANCE EDITING FEATURES
+================================================================================
+
+The application follows a clean pattern for adding features:
+
+1. Detect user action (GTK signal)
+2. Extract data from GUI or core
+3. Perform operation on core
+4. Refresh affected UI elements
+
+EXAMPLE: Adding a keyboard shortcut for Update
+  1. Add "key-press-event" handler to tree
+  2. Check if key == Return
+  3. Call updateSelectedNode()
+  4. Already have all the infrastructure!
+
+EXAMPLE: Adding inline tree name editing
+  1. Make cell renderer editable (line 449)
+  2. Add "edited" signal handler
+  3. Update core with new name
+  4. Refresh tree
+
+The existing architecture makes it very straightforward to add:
+  - Keyboard shortcuts
+  - Right-click context menus
+  - Inline editing in tree
+  - Drag-and-drop reordering
+  - Copy/paste nodes
+  - Save/load pipelines
+
+================================================================================

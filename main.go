@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 
@@ -37,18 +39,154 @@ type TextCleaner struct {
 	deleteNodeButton  *gtk.Button
 	indentButton      *gtk.Button
 	unindentButton    *gtk.Button
+	moveUpButton      *gtk.Button
+	moveDownButton    *gtk.Button
 	addChildButton    *gtk.Button
 }
 
 func main() {
+	// Parse command-line flags
+	socketPath := flag.String("socket", "", "Listen on Unix socket at this path (e.g., /tmp/textcleaner.sock)")
+	headless := flag.Bool("headless", false, "Run in headless mode (server only, no GUI)")
+	flag.Parse()
+
+	// Create the headless core
+	core := NewTextCleanerCore()
+
+	// If headless mode with socket, start server and exit
+	if *headless {
+		if *socketPath == "" {
+			log.Fatalf("Error: --headless requires --socket to specify socket path\n")
+		}
+		runHeadlessServer(*socketPath, core)
+		return
+	}
+
+	// Otherwise, run GUI mode
+	// Initialize GTK
 	gtk.Init(nil)
 
+	// Track whether we're connecting to an existing socket server
+	connectingToExistingSocket := false
+
+	// If socket mode is requested, try to load state from existing server
+	if *socketPath != "" {
+		if err := loadStateFromSocket(core, *socketPath); err != nil {
+			log.Fatalf("Failed to load session from socket: %v\n", err)
+		}
+		connectingToExistingSocket = true
+	}
+
+	// Create the GUI application
 	app := &TextCleaner{
-		core: NewTextCleanerCore(),
+		core: core,
 	}
 	app.BuildUI()
 
+	// Only start socket server if NOT connecting to existing one
+	// (Connecting to existing socket means we share that server with other clients)
+	if *socketPath != "" && !connectingToExistingSocket {
+		server := NewSocketServer(*socketPath, core)
+
+		// Set up callback to refresh GUI when socket commands change the core
+		server.SetUpdateCallback(func() {
+			// Use glib.IdleAdd to queue refresh on the main GTK thread
+			glib.IdleAdd(func() bool {
+				app.refreshUIFromCore()
+				return false // Don't reschedule
+			})
+		})
+
+		if err := server.Start(); err != nil {
+			log.Fatalf("Failed to start socket server: %v\n", err)
+		}
+
+		fmt.Printf("TextCleaner socket server listening on %s\n", *socketPath)
+	} else if *socketPath != "" {
+		fmt.Printf("TextCleaner GUI connected to socket server at %s\n", *socketPath)
+	}
+
+	// Run the GUI (blocks until window is closed)
 	gtk.Main()
+}
+
+// runHeadlessServer starts a socket server without GUI
+func runHeadlessServer(socketPath string, core *TextCleanerCore) {
+	server := NewSocketServer(socketPath, core)
+
+	if err := server.Start(); err != nil {
+		log.Fatalf("Failed to start socket server: %v\n", err)
+	}
+
+	fmt.Printf("TextCleaner headless server listening on %s\n", socketPath)
+	fmt.Println("Press Ctrl+C to stop")
+
+	// Wait for shutdown signal (handled by the server itself)
+	server.Wait()
+	fmt.Println("Server stopped")
+}
+
+// loadStateFromSocket connects to a running socket server and loads the current state
+func loadStateFromSocket(core *TextCleanerCore, socketPath string) error {
+	// Try to connect to existing socket server
+	client, err := NewSocketClient(socketPath)
+	if err != nil {
+		return fmt.Errorf("no socket server running at %s - start one first with: ./go-textcleaner --headless --socket %s", socketPath, socketPath)
+	}
+	defer client.Close()
+
+	fmt.Printf("Connected to socket server at %s, loading session...\n", socketPath)
+
+	// Load the current pipeline
+	pipelineResp, err := client.Execute(`{"action":"export_pipeline","params":{}}`)
+	if err != nil {
+		return fmt.Errorf("failed to get pipeline: %w", err)
+	}
+
+	if success, ok := pipelineResp["success"].(bool); ok && success {
+		if result, ok := pipelineResp["result"].(map[string]interface{}); ok {
+			if pipeline, ok := result["pipeline"]; ok {
+				// Convert the pipeline object back to JSON string for import
+				pipelineJSON, err := json.Marshal(pipeline)
+				if err != nil {
+					return fmt.Errorf("failed to marshal pipeline: %w", err)
+				}
+				// Import the pipeline into our core
+				if err := core.ImportPipeline(string(pipelineJSON)); err != nil {
+					return fmt.Errorf("failed to import pipeline: %w", err)
+				}
+			}
+		}
+	}
+
+	// Load the current input text
+	inputResp, err := client.Execute(`{"action":"get_input_text","params":{}}`)
+	if err != nil {
+		return fmt.Errorf("failed to get input text: %w", err)
+	}
+
+	if success, ok := inputResp["success"].(bool); ok && success {
+		if result, ok := inputResp["result"].(map[string]interface{}); ok {
+			if text, ok := result["text"].(string); ok {
+				core.SetInputText(text)
+			}
+		}
+	}
+
+	// Load the current selected node
+	selectedResp, err := client.Execute(`{"action":"get_selected_node_id","params":{}}`)
+	if err == nil {
+		if success, ok := selectedResp["success"].(bool); ok && success {
+			if result, ok := selectedResp["result"].(map[string]interface{}); ok {
+				if nodeID, ok := result["node_id"].(string); ok && nodeID != "" {
+					core.SelectNode(nodeID)
+				}
+			}
+		}
+	}
+
+	fmt.Println("Session loaded successfully")
+	return nil
 }
 
 func (tc *TextCleaner) BuildUI() {
@@ -221,30 +359,49 @@ func (tc *TextCleaner) createNodeControls() *gtk.Box {
 
 	controlsBox.PackStart(buttonRow, false, false, 0)
 
-	// Add child row
-	addChildRow, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+	// Tree operations row 1 (Add Child, Indent, Unindent, Delete)
+	treeOpsRow1, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
 
 	addChildButton, _ := gtk.ButtonNewWithLabel("Add Child")
 	tc.addChildButton = addChildButton
 	addChildButton.SetSensitive(false)
-	addChildRow.PackStart(addChildButton, true, true, 0)
+	treeOpsRow1.PackStart(addChildButton, true, true, 0)
 
 	indentButton, _ := gtk.ButtonNewWithLabel("Indent")
 	tc.indentButton = indentButton
 	indentButton.SetSensitive(false)
-	addChildRow.PackStart(indentButton, true, true, 0)
+	treeOpsRow1.PackStart(indentButton, true, true, 0)
 
 	unindentButton, _ := gtk.ButtonNewWithLabel("Unindent")
 	tc.unindentButton = unindentButton
 	unindentButton.SetSensitive(false)
-	addChildRow.PackStart(unindentButton, true, true, 0)
+	treeOpsRow1.PackStart(unindentButton, true, true, 0)
 
 	deleteNodeButton, _ := gtk.ButtonNewWithLabel("Delete")
 	tc.deleteNodeButton = deleteNodeButton
 	deleteNodeButton.SetSensitive(false)
-	addChildRow.PackStart(deleteNodeButton, true, true, 0)
+	treeOpsRow1.PackStart(deleteNodeButton, true, true, 0)
 
-	controlsBox.PackStart(addChildRow, false, false, 0)
+	controlsBox.PackStart(treeOpsRow1, false, false, 0)
+
+	// Tree operations row 2 (Move Up, Move Down)
+	treeOpsRow2, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 5)
+
+	moveUpButton, _ := gtk.ButtonNewWithLabel("Move Up")
+	tc.moveUpButton = moveUpButton
+	moveUpButton.SetSensitive(false)
+	treeOpsRow2.PackStart(moveUpButton, true, true, 0)
+
+	moveDownButton, _ := gtk.ButtonNewWithLabel("Move Down")
+	tc.moveDownButton = moveDownButton
+	moveDownButton.SetSensitive(false)
+	treeOpsRow2.PackStart(moveDownButton, true, true, 0)
+
+	// Spacer
+	spacer, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 0)
+	treeOpsRow2.PackStart(spacer, true, true, 0)
+
+	controlsBox.PackStart(treeOpsRow2, false, false, 0)
 
 	return controlsBox
 }
@@ -391,6 +548,48 @@ func (tc *TextCleaner) setupEventHandlers() {
 	tc.unindentButton.Connect("clicked", func() {
 		tc.unindentSelectedNode()
 	})
+
+	// Move Up button
+	tc.moveUpButton.Connect("clicked", func() {
+		tc.moveSelectedNodeUp()
+	})
+
+	// Move Down button
+	tc.moveDownButton.Connect("clicked", func() {
+		tc.moveSelectedNodeDown()
+	})
+
+	// ===== REAL-TIME NODE EDITING =====
+	// Wire up auto-update handlers for node property fields
+	// When any field is edited, automatically update the node and refresh output
+
+	// Node name field - auto-update when edited
+	tc.nodeNameEntry.Connect("changed", func() {
+		tc.updateNodeFromUIFields()
+	})
+
+	// Operation combo - auto-update when changed
+	tc.operationCombo.Connect("changed", func() {
+		// Only update if we're currently editing a node
+		if tc.core.GetSelectedNodeID() != "" {
+			tc.updateNodeFromUIFields()
+		}
+	})
+
+	// Argument 1 - auto-update when edited
+	tc.argument1.Connect("changed", func() {
+		tc.updateNodeFromUIFields()
+	})
+
+	// Argument 2 - auto-update when edited
+	tc.argument2.Connect("changed", func() {
+		tc.updateNodeFromUIFields()
+	})
+
+	// Condition field - auto-update when edited
+	tc.conditionEntry.Connect("changed", func() {
+		tc.updateNodeFromUIFields()
+	})
 }
 
 func (tc *TextCleaner) updateNodeTypeUI() {
@@ -464,6 +663,8 @@ func (tc *TextCleaner) updateTreeSelection() {
 	}
 
 	tc.updateButtonStates()
+	// Update visual indicator in tree
+	tc.updateTreeEditingIndicators()
 }
 
 func (tc *TextCleaner) loadNodeToUI(node *PipelineNode) {
@@ -587,6 +788,48 @@ func (tc *TextCleaner) updateSelectedNode() {
 	}
 }
 
+// updateNodeFromUIFields reads current UI field values and updates the selected node in real-time
+// This is called whenever a field is edited to provide immediate feedback
+func (tc *TextCleaner) updateNodeFromUIFields() {
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return
+	}
+
+	nodeType := tc.nodeTypeCombo.GetActiveText()
+	nodeName, _ := tc.nodeNameEntry.GetText()
+	operation := ""
+	arg1 := ""
+	arg2 := ""
+	condition := ""
+
+	if nodeType == "Operation" {
+		operation = tc.operationCombo.GetActiveText()
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
+	} else if nodeType == "If (Conditional)" {
+		condition, _ = tc.conditionEntry.GetText()
+	}
+
+	// Update node via core
+	err := tc.core.UpdateNode(
+		selectedID,
+		nodeName,
+		operation,
+		arg1,
+		arg2,
+		condition,
+	)
+
+	if err != nil {
+		return
+	}
+
+	// Refresh UI to show changes in real-time
+	tc.refreshPipelineTree()
+	tc.updateTextDisplay()
+}
+
 func (tc *TextCleaner) deleteSelectedNode() {
 	if tc.core.GetSelectedNodeID() == "" {
 		return
@@ -649,22 +892,80 @@ func (tc *TextCleaner) addChildNode() {
 }
 
 func (tc *TextCleaner) indentSelectedNode() {
-	// This would move node to be a child of the previous node
-	// Simplified for now
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return
+	}
+
+	if err := tc.core.IndentNode(selectedID); err != nil {
+		return
+	}
+
+	// Refresh UI
+	tc.refreshPipelineTree()
+	tc.updateTextDisplay()
+	tc.updateButtonStates()
 }
 
 func (tc *TextCleaner) unindentSelectedNode() {
-	// This would move node to be a sibling of its parent
-	// Simplified for now
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return
+	}
+
+	if err := tc.core.UnindentNode(selectedID); err != nil {
+		return
+	}
+
+	// Refresh UI
+	tc.refreshPipelineTree()
+	tc.updateTextDisplay()
+	tc.updateButtonStates()
+}
+
+func (tc *TextCleaner) moveSelectedNodeUp() {
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return
+	}
+
+	if err := tc.core.MoveNodeUp(selectedID); err != nil {
+		return
+	}
+
+	// Refresh UI
+	tc.refreshPipelineTree()
+	tc.updateTextDisplay()
+	tc.updateButtonStates()
+}
+
+func (tc *TextCleaner) moveSelectedNodeDown() {
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return
+	}
+
+	if err := tc.core.MoveNodeDown(selectedID); err != nil {
+		return
+	}
+
+	// Refresh UI
+	tc.refreshPipelineTree()
+	tc.updateTextDisplay()
+	tc.updateButtonStates()
 }
 
 func (tc *TextCleaner) updateButtonStates() {
-	hasSelection := tc.core.GetSelectedNodeID() != ""
+	selectedID := tc.core.GetSelectedNodeID()
+	hasSelection := selectedID != ""
+
 	tc.editNodeButton.SetSensitive(hasSelection)
 	tc.deleteNodeButton.SetSensitive(hasSelection)
 	tc.addChildButton.SetSensitive(hasSelection)
-	tc.indentButton.SetSensitive(false) // TODO: implement
-	tc.unindentButton.SetSensitive(false) // TODO: implement
+	tc.indentButton.SetSensitive(hasSelection && tc.core.CanIndentNode(selectedID))
+	tc.unindentButton.SetSensitive(hasSelection && tc.core.CanUnindentNode(selectedID))
+	tc.moveUpButton.SetSensitive(hasSelection && tc.core.CanMoveNodeUp(selectedID))
+	tc.moveDownButton.SetSensitive(hasSelection && tc.core.CanMoveNodeDown(selectedID))
 }
 
 func (tc *TextCleaner) clearNodeInputs() {
@@ -689,6 +990,57 @@ func (tc *TextCleaner) refreshPipelineTree() {
 
 	// Expand all nodes
 	tc.pipelineTree.ExpandAll()
+
+	// Update visual editing indicators
+	tc.updateTreeEditingIndicators()
+}
+
+// updateTreeEditingIndicators updates the display of nodes in the tree to show which node is being edited
+func (tc *TextCleaner) updateTreeEditingIndicators() {
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID == "" {
+		return // No node selected, nothing to highlight
+	}
+
+	// Walk through the tree store and update the display text for the selected node
+	tc.updateNodeDisplayWithIndicator(nil, selectedID)
+}
+
+// updateNodeDisplayWithIndicator recursively updates tree nodes to add/remove editing indicator
+func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, selectedID string) bool {
+	iter := tc.treeStore.IterChildren(parentIter)
+	if iter == nil {
+		return false
+	}
+
+	for {
+		// Get node ID from column 1
+		val, _ := tc.treeStore.GetValue(iter, 1)
+		nodeID, _ := val.GetString()
+
+		if nodeID == selectedID {
+			// Found the selected node - update its display with indicator
+			foundNode := tc.core.GetNode(nodeID)
+			if foundNode != nil {
+				displayText := tc.getNodeDisplayText(foundNode)
+				displayText = "✏️ " + displayText // Add pencil emoji indicator
+				tc.treeStore.SetValue(iter, 0, displayText)
+			}
+			return true
+		}
+
+		// Recursively search children
+		if tc.updateNodeDisplayWithIndicator(iter, selectedID) {
+			return true
+		}
+
+		// Move to next sibling
+		if !tc.treeStore.IterNext(iter) {
+			break
+		}
+	}
+
+	return false
 }
 
 // buildTreePathForNodeID builds a GTK TreePath for a node anywhere in the tree
@@ -823,4 +1175,26 @@ func (tc *TextCleaner) copyToClipboard() {
 	text, _ := tc.outputBuffer.GetText(startIter, endIter, true)
 
 	clipboard.SetText(text)
+}
+
+// refreshUIFromCore is called when socket commands modify the core
+// It refreshes all UI elements to reflect the current state of the core
+func (tc *TextCleaner) refreshUIFromCore() {
+	// Refresh the pipeline tree view to show any structural changes
+	tc.refreshPipelineTree()
+
+	// Refresh the output text display (in case text processing changed)
+	tc.updateTextDisplay()
+
+	// Update button states based on selection
+	tc.updateButtonStates()
+
+	// If a node is selected, refresh its display in the node controls
+	selectedID := tc.core.GetSelectedNodeID()
+	if selectedID != "" {
+		node := tc.core.GetNode(selectedID)
+		if node != nil {
+			tc.loadNodeToUI(node)
+		}
+	}
 }
