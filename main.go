@@ -48,6 +48,8 @@ func main() {
 	// Parse command-line flags
 	socketPath := flag.String("socket", "", "Listen on Unix socket at this path (e.g., /tmp/textcleaner.sock)")
 	headless := flag.Bool("headless", false, "Run in headless mode (server only, no GUI)")
+	logJSON := flag.Bool("log-json", false, "Log raw JSON commands in headless mode")
+	logCommands := flag.Bool("log-commands", false, "Log formatted commands in headless mode")
 	flag.Parse()
 
 	// Create the headless core
@@ -58,7 +60,7 @@ func main() {
 		if *socketPath == "" {
 			log.Fatalf("Error: --headless requires --socket to specify socket path\n")
 		}
-		runHeadlessServer(*socketPath, core)
+		runHeadlessServer(*socketPath, core, *logJSON, *logCommands)
 		return
 	}
 
@@ -111,14 +113,24 @@ func main() {
 }
 
 // runHeadlessServer starts a socket server without GUI
-func runHeadlessServer(socketPath string, core *TextCleanerCore) {
+func runHeadlessServer(socketPath string, core *TextCleanerCore, logJSON bool, logCommands bool) {
 	server := NewSocketServer(socketPath, core)
+
+	// Enable logging if requested
+	server.SetLogJSON(logJSON)
+	server.SetLogCommands(logCommands)
 
 	if err := server.Start(); err != nil {
 		log.Fatalf("Failed to start socket server: %v\n", err)
 	}
 
 	fmt.Printf("TextCleaner headless server listening on %s\n", socketPath)
+	if logJSON {
+		fmt.Println("JSON command logging: enabled")
+	}
+	if logCommands {
+		fmt.Println("Formatted command logging: enabled")
+	}
 	fmt.Println("Press Ctrl+C to stop")
 
 	// Wait for shutdown signal (handled by the server itself)
