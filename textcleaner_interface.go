@@ -69,6 +69,10 @@ type TextCleanerCommands interface {
 	// GetOutputText returns the result of processing input through the pipeline
 	GetOutputText() string
 
+	// GetOutputTextAtNode returns the result of processing input through nodes up to and including the specified node
+	// Useful for debugging - see what the text looks like at each step of the pipeline
+	GetOutputTextAtNode(nodeID string) string
+
 	// =========================================================================
 	// Query Operations - Retrieve pipeline information
 	// =========================================================================

@@ -474,6 +474,32 @@ func (s *SocketClientCommands) GetOutputText() string {
 	return ""
 }
 
+// GetOutputTextAtNode implements TextCleanerCommands.GetOutputTextAtNode
+func (s *SocketClientCommands) GetOutputTextAtNode(nodeID string) string {
+	cmdJSON, _ := json.Marshal(map[string]interface{}{
+		"action": "get_output_text_at_node",
+		"params": map[string]interface{}{
+			"node_id": nodeID,
+		},
+	})
+
+	resp, err := s.client.Execute(string(cmdJSON))
+	if err != nil {
+		log.Printf("GetOutputTextAtNode socket error: %v", err)
+		return ""
+	}
+
+	if success, ok := resp["success"].(bool); ok && success {
+		if result, ok := resp["result"].(map[string]interface{}); ok {
+			if output, ok := result["output"].(string); ok {
+				return output
+			}
+		}
+	}
+
+	return ""
+}
+
 // ============================================================================
 // Query Operations Methods
 // ============================================================================

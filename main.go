@@ -1062,6 +1062,8 @@ func (tc *TextCleaner) updateTreeSelection() {
 		if oldSelectedID != "" {
 			tc.updateSingleNodeDisplay(oldSelectedID)
 		}
+		// Show full pipeline output when no node is selected
+		tc.updateTextDisplay()
 		return
 	}
 
@@ -1087,6 +1089,11 @@ func (tc *TextCleaner) updateTreeSelection() {
 	// Update the newly selected node (without editing indicator since editingMode is false)
 	if nodeID != "" {
 		tc.updateSingleNodeDisplay(nodeID)
+	}
+
+	// Show the text output up to and including the selected node
+	if nodeID != "" {
+		tc.updateTextDisplayAtNode(nodeID)
 	}
 }
 
@@ -1638,6 +1645,13 @@ func (tc *TextCleaner) updateTextDisplay() {
 	tc.outputBuffer.SetText(tc.commands.GetOutputText())
 }
 
+// updateTextDisplayAtNode updates the output display to show text after processing through a specific node
+// This allows users to see intermediate results as they navigate the pipeline
+func (tc *TextCleaner) updateTextDisplayAtNode(nodeID string) {
+	// Update output buffer with text processed up to the selected node
+	tc.outputBuffer.SetText(tc.commands.GetOutputTextAtNode(nodeID))
+}
+
 func (tc *TextCleaner) processText() {
 	// Get input text from GTK buffer
 	startIter, endIter := tc.inputBuffer.GetBounds()
@@ -1646,8 +1660,14 @@ func (tc *TextCleaner) processText() {
 	// Process via commands interface (works with both local core and socket wrapper)
 	tc.commands.SetInputText(input)
 
-	// Update output buffer
-	tc.outputBuffer.SetText(tc.commands.GetOutputText())
+	// Update output buffer - if a node is selected, show output at that node
+	// Otherwise show the full pipeline output
+	selectedNodeID := tc.commands.GetSelectedNodeID()
+	if selectedNodeID != "" {
+		tc.outputBuffer.SetText(tc.commands.GetOutputTextAtNode(selectedNodeID))
+	} else {
+		tc.outputBuffer.SetText(tc.commands.GetOutputText())
+	}
 }
 
 func (tc *TextCleaner) copyToClipboard() {

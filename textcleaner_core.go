@@ -619,6 +619,135 @@ func (tc *TextCleanerCore) GetOutputText() string {
 	return tc.outputText
 }
 
+// GetOutputTextAtNode returns the text after processing through all nodes up to and including the specified node
+// Processes nodes in depth-first traversal order from the top of the pipeline
+// This is useful for debugging - see what the text looks like at each step of the pipeline
+func (tc *TextCleanerCore) GetOutputTextAtNode(nodeID string) string {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+
+	if nodeID == "" {
+		return tc.inputText
+	}
+
+	// Get all nodes in depth-first order up to the selected node
+	nodes := tc.getNodesUpToNode(nodeID)
+	if nodes == nil {
+		return tc.inputText // Node not found, return input
+	}
+
+	// Only execute top-level nodes (those whose parent is not in the collected list)
+	// This prevents double-execution: children are already executed by their parents via ExecuteNode
+	result := tc.inputText
+	for _, node := range nodes {
+		// Check if this node's parent is in our list
+		hasParentInList := false
+		for _, potentialParent := range nodes {
+			if potentialParent.ID != node.ID && tc.isNodeChild(potentialParent, node) {
+				hasParentInList = true
+				break
+			}
+		}
+
+		// Only execute if this node doesn't have a parent in the list
+		if !hasParentInList {
+			result = ExecuteNode(node, result)
+		}
+	}
+
+	return result
+}
+
+// getNodesUpToNode returns a list of nodes in depth-first traversal order up to and including the target node
+// Includes all root nodes before the target's branch, and the branch path to the target
+// Returns the nodes themselves (not just IDs) so we can execute them with their full structure
+func (tc *TextCleanerCore) getNodesUpToNode(nodeID string) []*PipelineNode {
+	var result []*PipelineNode
+	var found bool
+
+	// Traverse root-level nodes in order
+	for i := range tc.pipeline {
+		if found {
+			break // Stop once we've found the target node
+		}
+		nodes, nodeFound := tc.collectNodesUpToNode(&tc.pipeline[i], nodeID)
+		result = append(result, nodes...)
+		found = nodeFound
+	}
+
+	if !found {
+		return nil // Node not found
+	}
+
+	return result
+}
+
+// collectNodesUpToNode recursively collects nodes in depth-first order up to the target node
+// Returns the list of nodes and whether the target was found
+func (tc *TextCleanerCore) collectNodesUpToNode(node *PipelineNode, targetID string) ([]*PipelineNode, bool) {
+	var result []*PipelineNode
+
+	// Add current node to result
+	result = append(result, node)
+
+	// Check if this is the target
+	if node.ID == targetID {
+		return result, true
+	}
+
+	// Recursively process children in order
+	for i := range node.Children {
+		childNodes, found := tc.collectNodesUpToNode(&node.Children[i], targetID)
+		result = append(result, childNodes...)
+		if found {
+			return result, true
+		}
+	}
+
+	// Process else-children (for if-nodes)
+	for i := range node.ElseChildren {
+		childNodes, found := tc.collectNodesUpToNode(&node.ElseChildren[i], targetID)
+		result = append(result, childNodes...)
+		if found {
+			return result, true
+		}
+	}
+
+	// Target not found in this subtree
+	return result, false
+}
+
+// isNodeChild checks if targetNode is a descendant of parentNode
+func (tc *TextCleanerCore) isNodeChild(parentNode *PipelineNode, targetNode *PipelineNode) bool {
+	if parentNode == nil || targetNode == nil {
+		return false
+	}
+
+	// Check direct children
+	for i := range parentNode.Children {
+		if parentNode.Children[i].ID == targetNode.ID {
+			return true
+		}
+		// Recursively check descendants
+		if tc.isNodeChild(&parentNode.Children[i], targetNode) {
+			return true
+		}
+	}
+
+	// Check else-children
+	for i := range parentNode.ElseChildren {
+		if parentNode.ElseChildren[i].ID == targetNode.ID {
+			return true
+		}
+		// Recursively check descendants
+		if tc.isNodeChild(&parentNode.ElseChildren[i], targetNode) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // processText executes the pipeline on the input text and updates outputText
 // This is a private method called automatically by SetInputText and other operations
 func (tc *TextCleanerCore) processText() {

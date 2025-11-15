@@ -41,6 +41,8 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdGetInputText(cmd.Params)
 	case "get_output_text":
 		return tc.cmdGetOutputText(cmd.Params)
+	case "get_output_text_at_node":
+		return tc.cmdGetOutputTextAtNode(cmd.Params)
 	case "get_pipeline":
 		return tc.cmdGetPipeline(cmd.Params)
 	case "export_pipeline":
@@ -202,6 +204,14 @@ func (tc *TextCleanerCore) cmdGetInputText(params map[string]interface{}) string
 func (tc *TextCleanerCore) cmdGetOutputText(params map[string]interface{}) string {
 	return tc.successResponse(map[string]interface{}{
 		"output": tc.GetOutputText(),
+	})
+}
+
+// cmdGetOutputTextAtNode returns the text after processing through nodes up to the specified node
+func (tc *TextCleanerCore) cmdGetOutputTextAtNode(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	return tc.successResponse(map[string]interface{}{
+		"output": tc.GetOutputTextAtNode(nodeID),
 	})
 }
 
