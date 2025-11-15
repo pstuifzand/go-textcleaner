@@ -490,21 +490,24 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	scrolledWindow.SetSizeRequest(200, -1)
 
-	// Create list store with three columns: display name, operation name, description
+	// Create list store with three columns: display name (markup), operation name, description
 	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
 
 	// Populate with all operations
 	operations := GetOperations()
 	for _, op := range operations {
 		iter := listStore.Append()
-		listStore.SetValue(iter, 0, op.Name)
+		// Store markup directly in the model: name bold, description smaller and gray
+		markup := fmt.Sprintf("<b>%s</b>\n<small><span foreground='#666666'>%s</span></small>",
+			glib.MarkupEscapeText(op.Name),
+			glib.MarkupEscapeText(op.Description))
+		listStore.SetValue(iter, 0, markup)
 		listStore.SetValue(iter, 1, op.Name)
 		listStore.SetValue(iter, 2, op.Description)
 	}
 
-	// Create filter model
-	filterModel, _ := listStore.ToTreeModel()
-	filter, _ := filterModel.FilterNew(nil)
+	// Create filter model and set up filter function
+	filter, _ := listStore.FilterNew(nil)
 
 	// Set up filter function
 	filter.SetVisibleFunc(func(model *gtk.TreeModel, iter *gtk.TreeIter) bool {
@@ -516,8 +519,8 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 			return true
 		}
 
-		// Get operation name and description
-		nameVal, _ := model.GetValue(iter, 0)
+		// Get operation name and description from columns 1 and 2
+		nameVal, _ := model.GetValue(iter, 1)
 		name, _ := nameVal.GetString()
 
 		descVal, _ := model.GetValue(iter, 2)
@@ -546,29 +549,15 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	tc.paletteTree = treeView
 	treeView.SetModel(filter)
 
-	// Create custom cell renderer for two-line display
+	// Create custom cell renderer for two-line display with markup
 	renderer, _ := gtk.CellRendererTextNew()
 	renderer.SetProperty("ellipsize", 3) // PANGO_ELLIPSIZE_END
 
-	// Set cell data function to format with two lines
+	// Create column with markup support
 	column, _ := gtk.TreeViewColumnNew()
 	column.PackStart(renderer, true)
-	column.SetCellDataFunc(renderer, func(layout *gtk.TreeViewColumn, cell *gtk.CellRenderer, model *gtk.TreeModel, iter *gtk.TreeIter) {
-		// Get name and description
-		nameVal, _ := model.GetValue(iter, 0)
-		name, _ := nameVal.GetString()
-
-		descVal, _ := model.GetValue(iter, 2)
-		desc, _ := descVal.GetString()
-
-		// Create two-line markup: name bold, description smaller and gray
-		markup := fmt.Sprintf("<b>%s</b>\n<small><span foreground='#666666'>%s</span></small>",
-			glib.MarkupEscapeText(name),
-			glib.MarkupEscapeText(desc))
-
-		cellRenderer := cell.(*gtk.CellRendererText)
-		cellRenderer.SetProperty("markup", markup)
-	})
+	// Bind the markup column (0) to the renderer's markup property
+	column.AddAttribute(renderer, "markup", 0)
 
 	treeView.AppendColumn(column)
 
