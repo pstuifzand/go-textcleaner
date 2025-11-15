@@ -490,9 +490,8 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	treeView.SetHeadersVisible(false)
 
 	// Enable drag source
-	targets := []gtk.TargetEntry{
-		{Target: "text/plain", Flags: gtk.TARGET_SAME_APP, Info: 0},
-	}
+	targetEntry, _ := gtk.TargetEntryNew("text/plain", gtk.TARGET_SAME_APP, 0)
+	targets := []gtk.TargetEntry{*targetEntry}
 	treeView.DragSourceSet(gdk.BUTTON1_MASK, targets, gdk.ACTION_COPY)
 
 	scrolledWindow.Add(treeView)
@@ -560,9 +559,8 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	treeView.SetHeadersVisible(false)
 
 	// Enable drag destination for the pipeline tree
-	targets := []gtk.TargetEntry{
-		{Target: "text/plain", Flags: gtk.TARGET_SAME_APP, Info: 0},
-	}
+	targetEntry, _ := gtk.TargetEntryNew("text/plain", gtk.TARGET_SAME_APP, 0)
+	targets := []gtk.TargetEntry{*targetEntry}
 	treeView.DragDestSet(gtk.DEST_DEFAULT_ALL, targets, gdk.ACTION_COPY)
 
 	scrolledWindow.Add(treeView)
@@ -744,9 +742,7 @@ func (tc *TextCleaner) setupDragAndDrop() {
 		}
 
 		// Get the drop position
-		var path *gtk.TreePath
-		var pos gtk.TreeViewDropPosition
-		widget.GetDestRowAtPos(x, y, &path, &pos)
+		path, pos := widget.GetDestRowAtPos(x, y)
 
 		var parentID string
 		if path != nil {
@@ -806,9 +802,6 @@ func (tc *TextCleaner) setupDragAndDrop() {
 			tc.updateTreeEditingIndicators()
 		}
 		tc.updateButtonStates()
-
-		// Finish the drag operation
-		context.FinishDrag(true, false, time)
 	})
 }
 
