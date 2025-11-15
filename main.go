@@ -16,13 +16,13 @@ const (
 )
 
 type TextCleaner struct {
+	core              *TextCleanerCore // Headless core for business logic
 	window            *gtk.Window
 	inputView         *gtk.TextView
 	outputView        *gtk.TextView
 	inputBuffer       *gtk.TextBuffer
 	outputBuffer      *gtk.TextBuffer
 	copyButton        *gtk.Button
-	pipeline          []PipelineNode
 	pipelineTree      *gtk.TreeView
 	treeStore         *gtk.TreeStore
 	selectedNode      *gtk.TreePath
@@ -38,15 +38,14 @@ type TextCleaner struct {
 	indentButton      *gtk.Button
 	unindentButton    *gtk.Button
 	addChildButton    *gtk.Button
-	selectedNodeID    string // Node ID for the selected node (works with nested nodes)
 }
 
 func main() {
 	gtk.Init(nil)
 
-	app := &TextCleaner{}
-	app.selectedNodeID = ""
-	app.pipeline = []PipelineNode{}
+	app := &TextCleaner{
+		core: NewTextCleanerCore(),
+	}
 	app.BuildUI()
 
 	gtk.Main()
@@ -353,9 +352,14 @@ func (tc *TextCleaner) setupEventHandlers() {
 		tc.updateNodeTypeUI()
 	})
 
-	// Tree selection changed
+	// Tree selection changed - update button states
 	tc.pipelineTree.Connect("cursor-changed", func() {
 		tc.updateTreeSelection()
+	})
+
+	// Tree row activated (double-click) - open node for editing
+	tc.pipelineTree.Connect("row-activated", func() {
+		tc.openNodeForEditing()
 	})
 
 	// Create Node button
@@ -417,11 +421,32 @@ func (tc *TextCleaner) updateNodeTypeUI() {
 	}
 }
 
+// openNodeForEditing opens the currently selected node for editing
+func (tc *TextCleaner) openNodeForEditing() {
+	selection, _ := tc.pipelineTree.GetSelection()
+	_, iter, ok := selection.GetSelected()
+	if !ok {
+		return
+	}
+
+	// Get the node ID from column 1 of the tree
+	val, _ := tc.treeStore.GetValue(iter, 1)
+	nodeID, _ := val.GetString()
+
+	// Find the node by ID in the pipeline
+	foundNode := tc.core.GetNode(nodeID)
+	if foundNode != nil {
+		tc.core.SelectNode(nodeID)
+		tc.loadNodeToUI(foundNode)
+		tc.updateButtonStates()
+	}
+}
+
 func (tc *TextCleaner) updateTreeSelection() {
 	selection, _ := tc.pipelineTree.GetSelection()
 	_, iter, ok := selection.GetSelected()
 	if !ok {
-		tc.selectedNodeID = ""
+		tc.core.SelectNode("")
 		tc.updateButtonStates()
 		return
 	}
@@ -431,12 +456,11 @@ func (tc *TextCleaner) updateTreeSelection() {
 	nodeID, _ := val.GetString()
 
 	// Find the node by ID in the pipeline
-	foundNode := tc.findNodeByID(nodeID)
+	foundNode := tc.core.GetNode(nodeID)
 	if foundNode != nil {
-		tc.selectedNodeID = nodeID
-		tc.loadNodeToUI(foundNode)
+		tc.core.SelectNode(nodeID)
 	} else {
-		tc.selectedNodeID = ""
+		tc.core.SelectNode("")
 	}
 
 	tc.updateButtonStates()
@@ -477,35 +501,41 @@ func (tc *TextCleaner) loadNodeToUI(node *PipelineNode) {
 }
 
 func (tc *TextCleaner) createNewNode() {
-	// Create a placeholder node with minimal defaults
 	nodeType := tc.nodeTypeCombo.GetActiveText()
+	nodeName, _ := tc.nodeNameEntry.GetText()
+	operation := ""
+	arg1 := ""
+	arg2 := ""
+	condition := ""
 
-	node := PipelineNode{
-		ID:       fmt.Sprintf("node_%d", len(tc.pipeline)),
-		Type:     tc.getNodeTypeFromUI(nodeType),
-		Name:     "[Empty]",
-		Children: []PipelineNode{},
+	if nodeType == "Operation" {
+		operation = tc.operationCombo.GetActiveText()
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
+	} else if nodeType == "If (Conditional)" {
+		condition, _ = tc.conditionEntry.GetText()
 	}
 
-	// Set type-specific defaults
-	switch nodeType {
-	case "Operation":
-		node.Operation = tc.operationCombo.GetActiveText()
-	case "If (Conditional)":
-		node.Condition = ""
-	case "ForEachLine":
-		node.Name = "For Each Line"
-	case "Group":
-		node.Name = "Group"
-	}
+	// Create node via core
+	nodeID := tc.core.CreateNode(
+		nodeType,
+		nodeName,
+		operation,
+		arg1,
+		arg2,
+		condition,
+	)
 
-	tc.pipeline = append(tc.pipeline, node)
+	// Refresh UI
 	tc.refreshPipelineTree()
-	tc.processText()
+	tc.updateTextDisplay()
 
 	// Select the newly created node
-	tc.selectedNodeID = node.ID
-	tc.loadNodeToUI(&node)
+	tc.core.SelectNode(nodeID)
+	node := tc.core.GetNode(nodeID)
+	if node != nil {
+		tc.loadNodeToUI(node)
+	}
 	tc.updateButtonStates()
 
 	// Clear inputs
@@ -513,122 +543,106 @@ func (tc *TextCleaner) createNewNode() {
 }
 
 func (tc *TextCleaner) updateSelectedNode() {
-	if tc.selectedNodeID == "" {
-		return
-	}
-
-	// Find the node by ID
-	node := tc.findNodeByID(tc.selectedNodeID)
-	if node == nil {
+	if tc.core.GetSelectedNodeID() == "" {
 		return
 	}
 
 	nodeType := tc.nodeTypeCombo.GetActiveText()
 	nodeName, _ := tc.nodeNameEntry.GetText()
+	operation := ""
+	arg1 := ""
+	arg2 := ""
+	condition := ""
 
-	node.Type = tc.getNodeTypeFromUI(nodeType)
-	node.Name = nodeName
-
-	switch nodeType {
-	case "Operation":
-		node.Operation = tc.operationCombo.GetActiveText()
-		node.Arg1, _ = tc.argument1.GetText()
-		node.Arg2, _ = tc.argument2.GetText()
-		// Auto-fill name if empty or still placeholder
-		if nodeName == "" || nodeName == "[Empty]" {
-			node.Name = node.Operation
-		}
-	case "If (Conditional)":
-		node.Condition, _ = tc.conditionEntry.GetText()
-		// Auto-fill name if empty or still placeholder
-		if nodeName == "" || nodeName == "[Empty]" {
-			node.Name = "If: " + node.Condition
-		}
-	case "ForEachLine":
-		// Auto-fill name if empty or still placeholder
-		if nodeName == "" || nodeName == "[Empty]" {
-			node.Name = "For Each Line"
-		}
-	case "Group":
-		// Auto-fill name if empty or still placeholder
-		if nodeName == "" || nodeName == "[Empty]" {
-			node.Name = "Group"
-		}
+	if nodeType == "Operation" {
+		operation = tc.operationCombo.GetActiveText()
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
+	} else if nodeType == "If (Conditional)" {
+		condition, _ = tc.conditionEntry.GetText()
 	}
 
+	// Update node via core
+	err := tc.core.UpdateNode(
+		tc.core.GetSelectedNodeID(),
+		nodeName,
+		operation,
+		arg1,
+		arg2,
+		condition,
+	)
+
+	if err != nil {
+		return
+	}
+
+	// Refresh UI
 	tc.refreshPipelineTree()
-	tc.processText()
+	tc.updateTextDisplay()
 
 	// Reload the updated node into the UI so user can test changes
-	updatedNode := tc.findNodeByID(tc.selectedNodeID)
+	updatedNode := tc.core.GetNode(tc.core.GetSelectedNodeID())
 	if updatedNode != nil {
 		tc.loadNodeToUI(updatedNode)
 	}
 }
 
 func (tc *TextCleaner) deleteSelectedNode() {
-	if tc.selectedNodeID == "" {
+	if tc.core.GetSelectedNodeID() == "" {
 		return
 	}
 
-	// Delete from root level
-	for i := range tc.pipeline {
-		if tc.pipeline[i].ID == tc.selectedNodeID {
-			tc.pipeline = append(tc.pipeline[:i], tc.pipeline[i+1:]...)
-			tc.selectedNodeID = ""
-			tc.refreshPipelineTree()
-			tc.processText()
-			tc.clearNodeInputs()
-			tc.updateButtonStates()
-			return
-		}
+	// Delete via core
+	err := tc.core.DeleteNode(tc.core.GetSelectedNodeID())
+	if err != nil {
+		return
 	}
 
-	// Delete from nested children (recursive)
-	tc.deleteNodeByID(&tc.pipeline, tc.selectedNodeID)
-	tc.selectedNodeID = ""
+	// Refresh UI
 	tc.refreshPipelineTree()
-	tc.processText()
+	tc.updateTextDisplay()
 	tc.clearNodeInputs()
 	tc.updateButtonStates()
 }
 
 func (tc *TextCleaner) addChildNode() {
-	if tc.selectedNodeID == "" {
-		return
-	}
-
-	// Find the parent node by ID
-	parentNode := tc.findNodeByID(tc.selectedNodeID)
-	if parentNode == nil {
+	if tc.core.GetSelectedNodeID() == "" {
 		return
 	}
 
 	nodeType := tc.nodeTypeCombo.GetActiveText()
+	nodeName, _ := tc.nodeNameEntry.GetText()
+	operation := ""
+	arg1 := ""
+	arg2 := ""
+	condition := ""
 
-	// Create a placeholder child node with minimal defaults
-	child := PipelineNode{
-		ID:       fmt.Sprintf("%s_child_%d", tc.selectedNodeID, len(parentNode.Children)),
-		Type:     tc.getNodeTypeFromUI(nodeType),
-		Name:     "[Empty]",
-		Children: []PipelineNode{},
+	if nodeType == "Operation" {
+		operation = tc.operationCombo.GetActiveText()
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
+	} else if nodeType == "If (Conditional)" {
+		condition, _ = tc.conditionEntry.GetText()
 	}
 
-	// Set type-specific defaults
-	switch nodeType {
-	case "Operation":
-		child.Operation = tc.operationCombo.GetActiveText()
-	case "If (Conditional)":
-		child.Condition = ""
-	case "ForEachLine":
-		child.Name = "For Each Line"
-	case "Group":
-		child.Name = "Group"
+	// Add child node via core
+	_, err := tc.core.AddChildNode(
+		tc.core.GetSelectedNodeID(),
+		nodeType,
+		nodeName,
+		operation,
+		arg1,
+		arg2,
+		condition,
+	)
+
+	if err != nil {
+		return
 	}
 
-	parentNode.Children = append(parentNode.Children, child)
+	// Refresh UI
 	tc.refreshPipelineTree()
-	tc.processText()
+	tc.updateTextDisplay()
 
 	// Clear inputs
 	tc.clearNodeInputs()
@@ -645,7 +659,7 @@ func (tc *TextCleaner) unindentSelectedNode() {
 }
 
 func (tc *TextCleaner) updateButtonStates() {
-	hasSelection := tc.selectedNodeID != ""
+	hasSelection := tc.core.GetSelectedNodeID() != ""
 	tc.editNodeButton.SetSensitive(hasSelection)
 	tc.deleteNodeButton.SetSensitive(hasSelection)
 	tc.addChildButton.SetSensitive(hasSelection)
@@ -665,8 +679,9 @@ func (tc *TextCleaner) clearNodeInputs() {
 func (tc *TextCleaner) refreshPipelineTree() {
 	tc.treeStore.Clear()
 
-	// Add all root-level nodes
-	for i, node := range tc.pipeline {
+	// Add all root-level nodes from core
+	pipeline := tc.core.GetPipeline()
+	for i, node := range pipeline {
 		tc.addNodeToTree(&node, nil, i)
 	}
 
@@ -679,7 +694,8 @@ func (tc *TextCleaner) refreshPipelineTree() {
 // buildTreePathForNodeID builds a GTK TreePath for a node anywhere in the tree
 func (tc *TextCleaner) buildTreePathForNodeID(nodeID string) *gtk.TreePath {
 	// Find path indices to this node
-	indices := tc.findNodePathIndices(&tc.pipeline, nodeID)
+	pipeline := tc.core.GetPipeline()
+	indices := tc.findNodePathIndices(&pipeline, nodeID)
 	if len(indices) == 0 {
 		return nil
 	}
@@ -777,78 +793,23 @@ func (tc *TextCleaner) getNodeTypeFromUI(nodeTypeText string) string {
 	return "operation"
 }
 
-// findNodeByID searches for a node by ID in the pipeline (handles nested nodes)
-func (tc *TextCleaner) findNodeByID(nodeID string) *PipelineNode {
-	for i := range tc.pipeline {
-		if node := tc.searchNodeByID(&tc.pipeline[i], nodeID); node != nil {
-			return node
-		}
-	}
-	return nil
-}
 
-// searchNodeByID recursively searches for a node by ID
-func (tc *TextCleaner) searchNodeByID(node *PipelineNode, nodeID string) *PipelineNode {
-	if node.ID == nodeID {
-		return node
-	}
-	// Search in children
-	for i := range node.Children {
-		if found := tc.searchNodeByID(&node.Children[i], nodeID); found != nil {
-			return found
-		}
-	}
-	// Search in else children
-	for i := range node.ElseChildren {
-		if found := tc.searchNodeByID(&node.ElseChildren[i], nodeID); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-// findNodeIndexByID finds the index of a root-level node by ID (only for root nodes)
-func (tc *TextCleaner) findNodeIndexByID(nodeID string) int {
-	for i := range tc.pipeline {
-		if tc.pipeline[i].ID == nodeID {
-			return i
-		}
-	}
-	return -1
-}
-
-// deleteNodeByID recursively deletes a node by ID from the pipeline
-func (tc *TextCleaner) deleteNodeByID(nodes *[]PipelineNode, nodeID string) bool {
-	for i := range *nodes {
-		if (*nodes)[i].ID == nodeID {
-			*nodes = append((*nodes)[:i], (*nodes)[i+1:]...)
-			return true
-		}
-		// Search in children
-		if tc.deleteNodeByID(&(*nodes)[i].Children, nodeID) {
-			return true
-		}
-		// Search in else children
-		if tc.deleteNodeByID(&(*nodes)[i].ElseChildren, nodeID) {
-			return true
-		}
-	}
-	return false
+// updateTextDisplay is called after core operations to update the output display
+func (tc *TextCleaner) updateTextDisplay() {
+	// Update output buffer from core
+	tc.outputBuffer.SetText(tc.core.GetOutputText())
 }
 
 func (tc *TextCleaner) processText() {
-	// Get input text
+	// Get input text from GTK buffer
 	startIter, endIter := tc.inputBuffer.GetBounds()
 	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
 
-	// Execute tree pipeline
-	output := input
-	for i := range tc.pipeline {
-		output = ExecuteNode(&tc.pipeline[i], output)
-	}
+	// Process via core
+	tc.core.SetInputText(input)
 
 	// Update output buffer
-	tc.outputBuffer.SetText(output)
+	tc.outputBuffer.SetText(tc.core.GetOutputText())
 }
 
 func (tc *TextCleaner) copyToClipboard() {
