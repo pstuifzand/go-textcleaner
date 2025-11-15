@@ -308,17 +308,20 @@ func ExecuteREPLCommand(cmd *REPLCommand, client *SocketClient, formatter *REPLF
 
 func handleCreateCommand(cmd *REPLCommand, client *SocketClient, formatter *REPLFormatter) error {
 	if cmd.Object == "node" {
-		// create node <name> [operation <op_name>] [arg1 <value>] [arg2 <value>]
+		// create node <name> [type <node_type>] [operation <op_name>] [arg1 <value>] [arg2 <value>] [parent <parent_id>]
 		// Support both: "create node Name OpName" and "create node Name operation OpName"
+		// Node types: operation (default), foreach, if, group
 		if len(cmd.Args) < 1 {
 			formatter.PrintError("create node requires a name")
 			return nil
 		}
 		name := cmd.Args[0]
+		nodeType := "operation" // Default to operation type
 		operation := ""
 		arg1 := ""
 		arg2 := ""
 		condition := ""
+		parentID := ""
 
 		// Parse remaining arguments
 		i := 1
@@ -326,7 +329,13 @@ func handleCreateCommand(cmd *REPLCommand, client *SocketClient, formatter *REPL
 			arg := strings.ToLower(cmd.Args[i])
 
 			// Check if this is a keyword
-			if arg == "operation" {
+			if arg == "type" {
+				if i+1 < len(cmd.Args) {
+					nodeType = cmd.Args[i+1]
+					i += 2
+					continue
+				}
+			} else if arg == "operation" {
 				if i+1 < len(cmd.Args) {
 					operation = cmd.Args[i+1]
 					i += 2
@@ -350,6 +359,12 @@ func handleCreateCommand(cmd *REPLCommand, client *SocketClient, formatter *REPL
 					i += 2
 					continue
 				}
+			} else if arg == "parent" {
+				if i+1 < len(cmd.Args) {
+					parentID = cmd.Args[i+1]
+					i += 2
+					continue
+				}
 			} else if !isKeyword(arg) {
 				// If not a keyword, treat as positional: first extra arg is operation
 				if operation == "" {
@@ -367,10 +382,19 @@ func handleCreateCommand(cmd *REPLCommand, client *SocketClient, formatter *REPL
 			i++
 		}
 
-		jsonCmd := fmt.Sprintf(
-			`{"action":"create_node","params":{"type":"operation","name":"%s","operation":"%s","arg1":"%s","arg2":"%s","condition":"%s"}}`,
-			escapeJSON(name), escapeJSON(operation), escapeJSON(arg1), escapeJSON(arg2), escapeJSON(condition),
-		)
+		// Build JSON command with parent_id and node type
+		var jsonCmd string
+		if parentID != "" {
+			jsonCmd = fmt.Sprintf(
+				`{"action":"create_node","params":{"type":"%s","name":"%s","operation":"%s","arg1":"%s","arg2":"%s","condition":"%s","parent_id":"%s"}}`,
+				escapeJSON(nodeType), escapeJSON(name), escapeJSON(operation), escapeJSON(arg1), escapeJSON(arg2), escapeJSON(condition), escapeJSON(parentID),
+			)
+		} else {
+			jsonCmd = fmt.Sprintf(
+				`{"action":"create_node","params":{"type":"%s","name":"%s","operation":"%s","arg1":"%s","arg2":"%s","condition":"%s"}}`,
+				escapeJSON(nodeType), escapeJSON(name), escapeJSON(operation), escapeJSON(arg1), escapeJSON(arg2), escapeJSON(condition),
+			)
+		}
 
 		response, err := client.Execute(jsonCmd)
 		if err != nil {
@@ -1278,7 +1302,7 @@ func (rs *REPLSession) Run() error {
 
 func isKeyword(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "operation", "arg1", "arg2", "condition":
+	case "type", "operation", "arg1", "arg2", "condition", "parent":
 		return true
 	}
 	return false

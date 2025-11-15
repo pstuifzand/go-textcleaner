@@ -883,6 +883,58 @@ func (tc *TextCleanerCore) searchNodeByID(node *PipelineNode, nodeID string) *Pi
 	return nil
 }
 
+// findNodeByName finds a node by its name (first match)
+func (tc *TextCleanerCore) findNodeByName(name string) *PipelineNode {
+	for i := range tc.pipeline {
+		if node := tc.searchNodeByName(&tc.pipeline[i], name); node != nil {
+			return node
+		}
+	}
+	return nil
+}
+
+// searchNodeByName recursively searches for a node by name
+func (tc *TextCleanerCore) searchNodeByName(node *PipelineNode, name string) *PipelineNode {
+	if node.Name == name {
+		return node
+	}
+
+	// Search in children
+	for i := range node.Children {
+		if found := tc.searchNodeByName(&node.Children[i], name); found != nil {
+			return found
+		}
+	}
+
+	// Search in else children
+	for i := range node.ElseChildren {
+		if found := tc.searchNodeByName(&node.ElseChildren[i], name); found != nil {
+			return found
+		}
+	}
+
+	return nil
+}
+
+// resolveNodeIdentifier resolves either a node ID or name to a node ID
+// First tries as ID, then tries as name
+// Must be called with appropriate locking (RLock or Lock) held
+func (tc *TextCleanerCore) resolveNodeIdentifier(identifier string) (string, error) {
+	// First, try to find by ID
+	node := tc.findNodeByID(identifier)
+	if node != nil {
+		return identifier, nil
+	}
+
+	// Then, try to find by name
+	node = tc.findNodeByName(identifier)
+	if node != nil {
+		return node.ID, nil
+	}
+
+	return "", fmt.Errorf("node not found: %s", identifier)
+}
+
 // deleteNodeByID recursively deletes a node by ID from the pipeline
 func (tc *TextCleanerCore) deleteNodeByID(nodes *[]PipelineNode, nodeID string) bool {
 	for i := range *nodes {

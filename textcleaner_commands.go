@@ -84,7 +84,7 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 // Command Handlers
 // ============================================================================
 
-// cmdCreateNode creates a new root-level node
+// cmdCreateNode creates a new root-level node or child node if parent_id is provided
 func (tc *TextCleanerCore) cmdCreateNode(params map[string]interface{}) string {
 	nodeType := getStr(params, "type", "")
 	name := getStr(params, "name", "")
@@ -92,12 +92,37 @@ func (tc *TextCleanerCore) cmdCreateNode(params map[string]interface{}) string {
 	arg1 := getStr(params, "arg1", "")
 	arg2 := getStr(params, "arg2", "")
 	condition := getStr(params, "condition", "")
+	parentIdentifier := getStr(params, "parent_id", "")
 
 	if nodeType == "" {
 		return tc.errorResponse("Missing required parameter: type")
 	}
 
-	nodeID := tc.CreateNode(nodeType, name, operation, arg1, arg2, condition)
+	var nodeID string
+	var err error
+	var parentID string
+
+	// If parent_id is provided, create as child node
+	if parentIdentifier != "" {
+		// Resolve the parent identifier to a node ID (supports both ID and name)
+		// Acquire read lock for resolution, then release before calling AddChildNode
+		tc.mu.RLock()
+		parentID, err = tc.resolveNodeIdentifier(parentIdentifier)
+		tc.mu.RUnlock()
+
+		if err != nil {
+			return tc.errorResponse(err.Error())
+		}
+
+		nodeID, err = tc.AddChildNode(parentID, nodeType, name, operation, arg1, arg2, condition)
+		if err != nil {
+			return tc.errorResponse(err.Error())
+		}
+	} else {
+		// Create as root-level node
+		nodeID = tc.CreateNode(nodeType, name, operation, arg1, arg2, condition)
+	}
+
 	return tc.successResponse(map[string]interface{}{
 		"node_id": nodeID,
 	})
