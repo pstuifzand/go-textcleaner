@@ -276,6 +276,33 @@ func (s *SocketClientCommands) MoveNodeDown(nodeID string) error {
 	return fmt.Errorf("move_node_down failed with unknown error")
 }
 
+// MoveNodeToPosition implements TextCleanerCommands.MoveNodeToPosition
+func (s *SocketClientCommands) MoveNodeToPosition(nodeID, newParentID string, position int) error {
+	cmdJSON, _ := json.Marshal(map[string]interface{}{
+		"action": "move_node_to_position",
+		"params": map[string]interface{}{
+			"node_id":      nodeID,
+			"new_parent_id": newParentID,
+			"position":     position,
+		},
+	})
+
+	resp, err := s.client.Execute(string(cmdJSON))
+	if err != nil {
+		return fmt.Errorf("socket error: %w", err)
+	}
+
+	if success, ok := resp["success"].(bool); ok && success {
+		return nil
+	}
+
+	if errMsg, ok := resp["error"].(string); ok {
+		return fmt.Errorf("move_node_to_position error: %s", errMsg)
+	}
+
+	return fmt.Errorf("move_node_to_position failed with unknown error")
+}
+
 // CanIndentNode implements TextCleanerCommands.CanIndentNode
 func (s *SocketClientCommands) CanIndentNode(nodeID string) bool {
 	cmdJSON, _ := json.Marshal(map[string]interface{}{

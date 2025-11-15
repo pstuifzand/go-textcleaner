@@ -733,11 +733,31 @@ func (tc *TextCleaner) setupDragAndDrop() {
 		data.SetText(operationName)
 	})
 
-	// Pipeline tree drag destination: create node when operation is dropped
+	// Pipeline tree drag source: provide node ID when dragging
+	targetEntry, _ := gtk.TargetEntryNew("text/plain", gtk.TARGET_SAME_APP, 0)
+	targets := []gtk.TargetEntry{*targetEntry}
+	tc.pipelineTree.DragSourceSet(gdk.BUTTON1_MASK, targets, gdk.ACTION_MOVE)
+
+	tc.pipelineTree.Connect("drag-data-get", func(widget *gtk.TreeView, context *gdk.DragContext, data *gtk.SelectionData, info uint, time uint) {
+		// Get selected node from pipeline tree
+		selection, _ := widget.GetSelection()
+		_, iter, ok := selection.GetSelected()
+		if !ok {
+			return
+		}
+
+		// Get node ID from column 1
+		val, _ := tc.treeStore.GetValue(iter, 1)
+		nodeID, _ := val.GetString()
+
+		// Set the selection data to "NODE:nodeID" to distinguish from palette drags
+		data.SetText("NODE:" + nodeID)
+	})
+
+	// Pipeline tree drag destination: create node from palette or move existing node
 	tc.pipelineTree.Connect("drag-data-received", func(widget *gtk.TreeView, context *gdk.DragContext, x int, y int, data *gtk.SelectionData, info uint, time uint) {
-		// Get the operation name from the drag data
-		operationName := data.GetText()
-		if operationName == "" {
+		dragData := data.GetText()
+		if dragData == "" {
 			return
 		}
 
@@ -745,64 +765,185 @@ func (tc *TextCleaner) setupDragAndDrop() {
 		path, pos, ok := widget.GetDestRowAtPos(x, y)
 		_ = ok // We proceed whether or not we got a valid position
 
-		var parentID string
-		if path != nil {
-			// Get the node ID at the drop position
-			iter, _ := tc.treeStore.GetIter(path)
-			val, _ := tc.treeStore.GetValue(iter, 1)
-			nodeID, _ := val.GetString()
+		// Determine if this is a palette drag (operation name) or tree drag (NODE:nodeID)
+		isTreeDrag := len(dragData) > 5 && dragData[:5] == "NODE:"
 
-			// If dropping on a node, determine if it should be a child or sibling
-			if pos == gtk.TREE_VIEW_DROP_INTO_OR_BEFORE || pos == gtk.TREE_VIEW_DROP_INTO_OR_AFTER {
-				// Drop as child of the target node
-				parentID = nodeID
+		if isTreeDrag {
+			// Handle tree node reordering
+			nodeID := dragData[5:]
+
+			// Prevent dragging a node to an invalid location
+			if !ok || path == nil {
+				// Dropping in empty space - add to root at the end
+				err := tc.commands.MoveNodeToPosition(nodeID, "", -1)
+				if err != nil {
+					return
+				}
 			} else {
-				// Drop as sibling - find parent of target node
-				parentNode := tc.findParentNode(nodeID)
-				if parentNode != nil {
-					parentID = parentNode.ID
+				// Get the target node
+				iter, _ := tc.treeStore.GetIter(path)
+				val, _ := tc.treeStore.GetValue(iter, 1)
+				targetID, _ := val.GetString()
+
+				// Prevent dragging into itself
+				if nodeID == targetID {
+					return
+				}
+
+				// Determine new parent and position based on drop location
+				var newParentID string
+				var newPosition int
+
+				// Check drop position relative to target row
+				switch pos {
+				case gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER:
+					// Drop INTO the target node - make it a child
+					newParentID = targetID
+					newPosition = 0 // Add at beginning of children
+
+				case gtk.TREE_VIEW_DROP_BEFORE:
+					// Drop BEFORE the target - make it a sibling
+					// Find parent and position of target
+					parentNode := tc.findParentNode(targetID)
+					if parentNode != nil {
+						newParentID = parentNode.ID
+					}
+					// Find position of target in parent's children
+					targetParent := tc.commands.GetNode(newParentID)
+					if targetParent != nil || newParentID == "" {
+						var childrenList []PipelineNode
+						if newParentID == "" {
+							childrenList = tc.commands.GetPipeline()
+						} else {
+							childrenList = targetParent.Children
+						}
+						for i, child := range childrenList {
+							if child.ID == targetID {
+								newPosition = i
+								break
+							}
+						}
+					}
+
+				case gtk.TREE_VIEW_DROP_AFTER:
+					// Drop AFTER the target - make it a sibling, positioned after
+					// Find parent and position of target
+					parentNode := tc.findParentNode(targetID)
+					if parentNode != nil {
+						newParentID = parentNode.ID
+					}
+					// Find position of target in parent's children
+					targetParent := tc.commands.GetNode(newParentID)
+					if targetParent != nil || newParentID == "" {
+						var childrenList []PipelineNode
+						if newParentID == "" {
+							childrenList = tc.commands.GetPipeline()
+						} else {
+							childrenList = targetParent.Children
+						}
+						for i, child := range childrenList {
+							if child.ID == targetID {
+								newPosition = i + 1
+								break
+							}
+						}
+					}
+				}
+
+				// Move the node
+				err := tc.commands.MoveNodeToPosition(nodeID, newParentID, newPosition)
+				if err != nil {
+					return
 				}
 			}
-		}
 
-		// Create the new node
-		var newNodeID string
-		if parentID != "" {
-			// Add as child node
-			newNodeID, _ = tc.commands.AddChildNode(
-				parentID,
-				"operation",
-				operationName,
-				operationName,
-				"",
-				"",
-				"",
-			)
+			// Refresh UI - keep the node selected
+			tc.refreshPipelineTree()
+			tc.updateTextDisplay()
+			tc.commands.SelectNode(nodeID)
+			tc.updateTreeSelection()
+
 		} else {
-			// Add as root node
-			newNodeID = tc.commands.CreateNode(
-				"operation",
-				operationName,
-				operationName,
-				"",
-				"",
-				"",
-			)
+			// Handle palette drag: create new node
+			operationName := dragData
+
+			var parentID string
+			if path != nil {
+				// Get the node ID at the drop position
+				iter, _ := tc.treeStore.GetIter(path)
+				val, _ := tc.treeStore.GetValue(iter, 1)
+				nodeID, _ := val.GetString()
+
+				// If dropping on a node, determine if it should be a child or sibling
+				if pos == gtk.TREE_VIEW_DROP_INTO_OR_BEFORE || pos == gtk.TREE_VIEW_DROP_INTO_OR_AFTER {
+					// Drop as child of the target node
+					parentID = nodeID
+				} else {
+					// Drop as sibling - find parent of target node
+					parentNode := tc.findParentNode(nodeID)
+					if parentNode != nil {
+						parentID = parentNode.ID
+					}
+				}
+			}
+
+			// Create the new node
+			var newNodeID string
+			if parentID != "" {
+				// Add as child node
+				newNodeID, _ = tc.commands.AddChildNode(
+					parentID,
+					"operation",
+					operationName,
+					operationName,
+					"",
+					"",
+					"",
+				)
+			} else {
+				// Add as root node
+				newNodeID = tc.commands.CreateNode(
+					"operation",
+					operationName,
+					operationName,
+					"",
+					"",
+					"",
+				)
+			}
+
+			// Refresh UI
+			tc.refreshPipelineTree()
+			tc.updateTextDisplay()
+
+			// Select and enter editing mode for the new node
+			tc.commands.SelectNode(newNodeID)
+			node := tc.commands.GetNode(newNodeID)
+			if node != nil {
+				tc.loadNodeToUI(node)
+				tc.editingMode = true
+				tc.updateTreeEditingIndicators()
+			}
+			tc.updateButtonStates()
+		}
+	})
+
+	// Pipeline tree drag motion: provide visual feedback during drag
+	tc.pipelineTree.Connect("drag-motion", func(widget *gtk.TreeView, context *gdk.DragContext, x int, y int, time uint) bool {
+		path, pos, ok := widget.GetDestRowAtPos(x, y)
+
+		if ok && path != nil {
+			// Highlight the drop target row
+			widget.SetDragDestRow(path, pos)
 		}
 
-		// Refresh UI
-		tc.refreshPipelineTree()
-		tc.updateTextDisplay()
+		return true
+	})
 
-		// Select and enter editing mode for the new node
-		tc.commands.SelectNode(newNodeID)
-		node := tc.commands.GetNode(newNodeID)
-		if node != nil {
-			tc.loadNodeToUI(node)
-			tc.editingMode = true
-			tc.updateTreeEditingIndicators()
-		}
-		tc.updateButtonStates()
+	// Pipeline tree drag leave: clear visual feedback
+	tc.pipelineTree.Connect("drag-leave", func(widget *gtk.TreeView, context *gdk.DragContext, time uint) {
+		// Clear any drag highlighting
+		widget.SetDragDestRow(nil, gtk.TREE_VIEW_DROP_BEFORE)
 	})
 }
 

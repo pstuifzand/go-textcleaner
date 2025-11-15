@@ -39,6 +39,11 @@ type TextCleanerCommands interface {
 	// MoveNodeDown moves a node later in its parent's children list
 	MoveNodeDown(nodeID string) error
 
+	// MoveNodeToPosition moves a node to a specific position with a new parent
+	// parentID: "" for root level, or the parent node ID
+	// position: index in the new parent's children list
+	MoveNodeToPosition(nodeID, newParentID string, position int) error
+
 	// CanIndentNode returns whether a node can be indented
 	CanIndentNode(nodeID string) bool
 

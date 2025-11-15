@@ -61,6 +61,8 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdMoveNodeUp(cmd.Params)
 	case "move_node_down":
 		return tc.cmdMoveNodeDown(cmd.Params)
+	case "move_node_to_position":
+		return tc.cmdMoveNodeToPosition(cmd.Params)
 	case "can_indent_node":
 		return tc.cmdCanIndentNode(cmd.Params)
 	case "can_unindent_node":
@@ -348,6 +350,25 @@ func (tc *TextCleanerCore) cmdMoveNodeDown(params map[string]interface{}) string
 	})
 }
 
+// cmdMoveNodeToPosition moves a node to a specific position with a new parent
+func (tc *TextCleanerCore) cmdMoveNodeToPosition(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	newParentID := getStr(params, "new_parent_id", "")
+	position := getInt(params, "position", 0)
+
+	if err := tc.MoveNodeToPosition(nodeID, newParentID, position); err != nil {
+		return tc.errorResponse(err.Error())
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"success": true,
+	})
+}
+
 // cmdCanIndentNode returns whether a node can be indented
 func (tc *TextCleanerCore) cmdCanIndentNode(params map[string]interface{}) string {
 	nodeID := getStr(params, "node_id", "")
@@ -425,6 +446,19 @@ func getStr(params map[string]interface{}, key, defaultValue string) string {
 	if val, ok := params[key]; ok {
 		if strVal, ok := val.(string); ok {
 			return strVal
+		}
+	}
+	return defaultValue
+}
+
+// getInt safely extracts an integer parameter, with a default value
+func getInt(params map[string]interface{}, key string, defaultValue int) int {
+	if val, ok := params[key]; ok {
+		switch v := val.(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
 		}
 	}
 	return defaultValue

@@ -371,6 +371,129 @@ func (tc *TextCleanerCore) MoveNodeDown(nodeID string) error {
 	return nil
 }
 
+// MoveNodeToPosition moves a node to a new parent at a specific position
+// parentID: "" means root level, otherwise the ID of the new parent node
+// position: index in the parent's children list (or root pipeline)
+func (tc *TextCleanerCore) MoveNodeToPosition(nodeID, newParentID string, position int) error {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+
+	// Validate: can't move a node into itself or its descendants
+	if nodeID == newParentID {
+		return fmt.Errorf("cannot move node into itself")
+	}
+
+	// Check if newParentID is a descendant of nodeID (would create a cycle)
+	if newParentID != "" {
+		node := tc.findNodeByID(nodeID)
+		if node != nil && tc.isNodeDescendant(nodeID, newParentID) {
+			return fmt.Errorf("cannot move node into its own descendant")
+		}
+	}
+
+	// Find and remove node from its current location
+	var nodeToMove *PipelineNode
+
+	// Try to find at root level
+	rootIdx := -1
+	for i := range tc.pipeline {
+		if tc.pipeline[i].ID == nodeID {
+			rootIdx = i
+			nodeToMove = &tc.pipeline[i]
+			break
+		}
+	}
+
+	if rootIdx >= 0 {
+		// Node is at root level, remove it
+		nodeToMove = &tc.pipeline[rootIdx]
+		// Make a copy before removing
+		nodeCopy := *nodeToMove
+		tc.pipeline = append(tc.pipeline[:rootIdx], tc.pipeline[rootIdx+1:]...)
+		nodeToMove = &nodeCopy
+	} else {
+		// Find in nested children
+		parentNode, idx := tc.findNodeParentAndIndex(&tc.pipeline, nodeID)
+		if parentNode == nil || idx < 0 {
+			return fmt.Errorf("node not found: %s", nodeID)
+		}
+
+		// Make a copy before removing
+		nodeCopy := parentNode.Children[idx]
+		parentNode.Children = append(parentNode.Children[:idx], parentNode.Children[idx+1:]...)
+		nodeToMove = &nodeCopy
+	}
+
+	// Insert node at new position
+	if newParentID == "" {
+		// Insert at root level
+		if position < 0 {
+			position = 0
+		}
+		if position > len(tc.pipeline) {
+			position = len(tc.pipeline)
+		}
+
+		newPipeline := append([]PipelineNode{}, tc.pipeline[:position]...)
+		newPipeline = append(newPipeline, *nodeToMove)
+		newPipeline = append(newPipeline, tc.pipeline[position:]...)
+		tc.pipeline = newPipeline
+	} else {
+		// Insert into parent's children
+		newParent := tc.findNodeByID(newParentID)
+		if newParent == nil {
+			return fmt.Errorf("new parent node not found: %s", newParentID)
+		}
+
+		if position < 0 {
+			position = 0
+		}
+		if position > len(newParent.Children) {
+			position = len(newParent.Children)
+		}
+
+		newChildren := append([]PipelineNode{}, newParent.Children[:position]...)
+		newChildren = append(newChildren, *nodeToMove)
+		newChildren = append(newChildren, newParent.Children[position:]...)
+		newParent.Children = newChildren
+	}
+
+	tc.processText()
+	return nil
+}
+
+// isNodeDescendant checks if targetID is a descendant of nodeID
+func (tc *TextCleanerCore) isNodeDescendant(nodeID, targetID string) bool {
+	node := tc.findNodeByID(nodeID)
+	if node == nil {
+		return false
+	}
+	return tc.searchNodeInChildren(node, targetID)
+}
+
+// searchNodeInChildren recursively checks if a node exists in children
+func (tc *TextCleanerCore) searchNodeInChildren(node *PipelineNode, targetID string) bool {
+	for i := range node.Children {
+		if node.Children[i].ID == targetID {
+			return true
+		}
+		if tc.searchNodeInChildren(&node.Children[i], targetID) {
+			return true
+		}
+	}
+
+	for i := range node.ElseChildren {
+		if node.ElseChildren[i].ID == targetID {
+			return true
+		}
+		if tc.searchNodeInChildren(&node.ElseChildren[i], targetID) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // CanIndentNode checks if a node can be indented
 func (tc *TextCleanerCore) CanIndentNode(nodeID string) bool {
 	tc.mu.RLock()
