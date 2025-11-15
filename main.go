@@ -129,9 +129,27 @@ func main() {
 	}
 	app.BuildUI()
 
+	// Populate the pipeline tree from the loaded session
+	app.refreshPipelineTree()
+
 	// Populate the input buffer with the loaded input text
 	inputText := commands.GetInputText()
 	app.inputBuffer.SetText(inputText)
+
+	// Update output display with processed text
+	app.updateTextDisplay()
+
+	// Restore the selected node from the session (if any)
+	selectedNodeID := commands.GetSelectedNodeID()
+	if selectedNodeID != "" {
+		commands.SelectNode(selectedNodeID)
+		node := commands.GetNode(selectedNodeID)
+		if node != nil {
+			app.loadNodeToUI(node)
+		}
+	}
+
+	fmt.Println("Session loaded successfully")
 
 	// Run the GUI (blocks until window is closed)
 	gtk.Main()
