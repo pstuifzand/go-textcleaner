@@ -235,7 +235,13 @@ func (ss *SocketServer) handleClient(conn net.Conn) {
 		// Trigger all registered update callbacks (e.g., to refresh all GUIs)
 		ss.mu.Lock()
 		callbacks := append([]UpdateCallback{}, ss.callbacks...)
+		logCommands = ss.logCommands
 		ss.mu.Unlock()
+
+		if len(callbacks) > 0 && logCommands {
+			fmt.Printf("[CALLBACK] Notifying %d connected client(s)\n", len(callbacks))
+		}
+
 		for _, callback := range callbacks {
 			callback()
 		}

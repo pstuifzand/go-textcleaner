@@ -1,10 +1,16 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
@@ -18,8 +24,9 @@ const (
 )
 
 type TextCleaner struct {
-	core              *TextCleanerCore // Headless core for business logic
-	window            *gtk.Window
+	commands      TextCleanerCommands // Interface for all operations (socket wrapper)
+	headlessProc  *os.Process         // Child headless process (if started by this GUI)
+	window        *gtk.Window
 	inputView         *gtk.TextView
 	outputView        *gtk.TextView
 	inputBuffer       *gtk.TextBuffer
@@ -66,51 +73,62 @@ func main() {
 	}
 
 	// Otherwise, run GUI mode
+	// Use default socket path if not specified
+	if *socketPath == "" {
+		*socketPath = generateRandomSocketPath()
+	}
+
 	// Initialize GTK
 	gtk.Init(nil)
 
-	// Track whether we're connecting to an existing socket server
-	connectingToExistingSocket := false
+	// Try to connect to existing socket server
+	socketClient, err := NewSocketClient(*socketPath)
+	var headlessProc *os.Process
 
-	// If socket mode is requested, try to load state from existing server
-	if *socketPath != "" {
-		if err := loadStateFromSocket(core, *socketPath); err != nil {
-			log.Fatalf("Failed to load session from socket: %v\n", err)
+	if err != nil {
+		// No existing server, start headless server as child process
+		fmt.Printf("Starting headless socket server at %s...\n", *socketPath)
+		headlessProc, err = startHeadlessChildProcess(*socketPath)
+		if err != nil {
+			log.Fatalf("Error: Failed to start headless socket server: %v\n", err)
 		}
-		connectingToExistingSocket = true
+
+		// Wait for server to start and listen for connections
+		socketClient, err = waitForSocketServer(*socketPath, 5*time.Second)
+		if err != nil {
+			headlessProc.Kill()
+			log.Fatalf("Error: Failed to connect to socket server: %v\n", err)
+		}
 	}
+
+	// Successfully connected to socket server
+	commands := NewSocketClientCommands(socketClient)
+	if err := loadStateFromSocket(core, socketClient); err != nil {
+		if headlessProc != nil {
+			headlessProc.Kill()
+		}
+		log.Fatalf("Failed to load session from socket: %v\n", err)
+	}
+	fmt.Printf("Connected to socket server at %s, loading session...\n", *socketPath)
 
 	// Create the GUI application
 	app := &TextCleaner{
-		core: core,
+		commands:     commands,
+		headlessProc: headlessProc,
 	}
 	app.BuildUI()
 
-	// Only start socket server if NOT connecting to existing one
-	// (Connecting to existing socket means we share that server with other clients)
-	if *socketPath != "" && !connectingToExistingSocket {
-		server := NewSocketServer(*socketPath, core)
-
-		// Set up callback to refresh GUI when socket commands change the core
-		server.SetUpdateCallback(func() {
-			// Use glib.IdleAdd to queue refresh on the main GTK thread
-			glib.IdleAdd(func() bool {
-				app.refreshUIFromCore()
-				return false // Don't reschedule
-			})
-		})
-
-		if err := server.Start(); err != nil {
-			log.Fatalf("Failed to start socket server: %v\n", err)
-		}
-
-		fmt.Printf("TextCleaner socket server listening on %s\n", *socketPath)
-	} else if *socketPath != "" {
-		fmt.Printf("TextCleaner GUI connected to socket server at %s\n", *socketPath)
-	}
+	// Populate the input buffer with the loaded input text
+	inputText := commands.GetInputText()
+	app.inputBuffer.SetText(inputText)
 
 	// Run the GUI (blocks until window is closed)
 	gtk.Main()
+
+	// Clean up child process if we started it
+	if headlessProc != nil {
+		headlessProc.Kill()
+	}
 }
 
 // runHeadlessServer starts a socket server without GUI
@@ -139,16 +157,8 @@ func runHeadlessServer(socketPath string, core *TextCleanerCore, logJSON bool, l
 	fmt.Println("Server stopped")
 }
 
-// loadStateFromSocket connects to a running socket server and loads the current state
-func loadStateFromSocket(core *TextCleanerCore, socketPath string) error {
-	// Try to connect to existing socket server
-	client, err := NewSocketClient(socketPath)
-	if err != nil {
-		return fmt.Errorf("no socket server running at %s - start one first with: ./go-textcleaner --headless --socket %s", socketPath, socketPath)
-	}
-	defer client.Close()
-
-	fmt.Printf("Connected to socket server at %s, loading session...\n", socketPath)
+// loadStateFromSocket loads the current state from a socket server via an existing client
+func loadStateFromSocket(core *TextCleanerCore, client *SocketClient) error {
 
 	// Load the current pipeline
 	pipelineResp, err := client.Execute(`{"action":"export_pipeline","params":{}}`)
@@ -585,7 +595,7 @@ func (tc *TextCleaner) setupEventHandlers() {
 
 	// Operation combo - auto-update when changed (only in editing mode)
 	tc.operationCombo.Connect("changed", func() {
-		if tc.editingMode && tc.core.GetSelectedNodeID() != "" {
+		if tc.editingMode && tc.commands.GetSelectedNodeID() != "" {
 			tc.updateNodeFromUIFields()
 		}
 	})
@@ -653,9 +663,9 @@ func (tc *TextCleaner) openNodeForEditing() {
 	nodeID, _ := val.GetString()
 
 	// Find the node by ID in the pipeline
-	foundNode := tc.core.GetNode(nodeID)
+	foundNode := tc.commands.GetNode(nodeID)
 	if foundNode != nil {
-		tc.core.SelectNode(nodeID)
+		tc.commands.SelectNode(nodeID)
 		tc.loadNodeToUI(foundNode)
 		tc.updateButtonStates()
 		// Enter editing mode - real-time updates will now be active
@@ -667,7 +677,7 @@ func (tc *TextCleaner) openNodeForEditing() {
 
 func (tc *TextCleaner) updateTreeSelection() {
 	// Save the previously selected node ID before changing selection
-	oldSelectedID := tc.core.GetSelectedNodeID()
+	oldSelectedID := tc.commands.GetSelectedNodeID()
 
 	// Single-click stops editing mode
 	tc.editingMode = false
@@ -676,7 +686,7 @@ func (tc *TextCleaner) updateTreeSelection() {
 	selection, _ := tc.pipelineTree.GetSelection()
 	_, iter, ok := selection.GetSelected()
 	if !ok {
-		tc.core.SelectNode("")
+		tc.commands.SelectNode("")
 		tc.updateButtonStates()
 		// Remove editing indicator from previously selected node
 		if oldSelectedID != "" {
@@ -690,11 +700,11 @@ func (tc *TextCleaner) updateTreeSelection() {
 	nodeID, _ := val.GetString()
 
 	// Find the node by ID in the pipeline
-	foundNode := tc.core.GetNode(nodeID)
+	foundNode := tc.commands.GetNode(nodeID)
 	if foundNode != nil {
-		tc.core.SelectNode(nodeID)
+		tc.commands.SelectNode(nodeID)
 	} else {
-		tc.core.SelectNode("")
+		tc.commands.SelectNode("")
 	}
 
 	tc.updateButtonStates()
@@ -768,9 +778,12 @@ func (tc *TextCleaner) createNewNode() {
 		nodeName = "Group"
 	}
 
-	// Create node via core
-	nodeID := tc.core.CreateNode(
-		nodeType,
+	// Convert UI node type to core node type
+	coreNodeType := tc.getNodeTypeFromUI(nodeType)
+
+	// Create node via commands interface (works with both local core and socket wrapper)
+	nodeID := tc.commands.CreateNode(
+		coreNodeType,
 		nodeName,
 		operation,
 		arg1,
@@ -783,8 +796,8 @@ func (tc *TextCleaner) createNewNode() {
 	tc.updateTextDisplay()
 
 	// Select and enter editing mode for the newly created node
-	tc.core.SelectNode(nodeID)
-	node := tc.core.GetNode(nodeID)
+	tc.commands.SelectNode(nodeID)
+	node := tc.commands.GetNode(nodeID)
 	if node != nil {
 		tc.loadNodeToUI(node)
 		tc.editingMode = true
@@ -797,7 +810,7 @@ func (tc *TextCleaner) createNewNode() {
 }
 
 func (tc *TextCleaner) updateSelectedNode() {
-	if tc.core.GetSelectedNodeID() == "" {
+	if tc.commands.GetSelectedNodeID() == "" {
 		return
 	}
 
@@ -816,9 +829,11 @@ func (tc *TextCleaner) updateSelectedNode() {
 		condition, _ = tc.conditionEntry.GetText()
 	}
 
-	// Update node via core
-	err := tc.core.UpdateNode(
-		tc.core.GetSelectedNodeID(),
+	selectedID := tc.commands.GetSelectedNodeID()
+
+	// Update node via commands interface (works with both local core and socket wrapper)
+	err := tc.commands.UpdateNode(
+		selectedID,
 		nodeName,
 		operation,
 		arg1,
@@ -835,7 +850,7 @@ func (tc *TextCleaner) updateSelectedNode() {
 	tc.updateTextDisplay()
 
 	// Reload the updated node into the UI so user can test changes
-	updatedNode := tc.core.GetNode(tc.core.GetSelectedNodeID())
+	updatedNode := tc.commands.GetNode(tc.commands.GetSelectedNodeID())
 	if updatedNode != nil {
 		tc.loadNodeToUI(updatedNode)
 	}
@@ -844,7 +859,7 @@ func (tc *TextCleaner) updateSelectedNode() {
 // updateNodeFromUIFields reads current UI field values and updates the selected node in real-time
 // This is called whenever a field is edited to provide immediate feedback
 func (tc *TextCleaner) updateNodeFromUIFields() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return
 	}
@@ -864,8 +879,8 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 		condition, _ = tc.conditionEntry.GetText()
 	}
 
-	// Update node via core
-	err := tc.core.UpdateNode(
+	// Update node via commands interface (works with both local core and socket wrapper)
+	err := tc.commands.UpdateNode(
 		selectedID,
 		nodeName,
 		operation,
@@ -881,7 +896,7 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 	// Update UI to show changes in real-time
 	// Only update the single node display and output, don't refresh entire tree
 	// (to avoid segfault from modifying tree during signal handling)
-	node := tc.core.GetNode(selectedID)
+	node := tc.commands.GetNode(selectedID)
 	if node != nil {
 		tc.updateSingleNodeDisplay(selectedID)
 	}
@@ -889,12 +904,14 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 }
 
 func (tc *TextCleaner) deleteSelectedNode() {
-	if tc.core.GetSelectedNodeID() == "" {
+	if tc.commands.GetSelectedNodeID() == "" {
 		return
 	}
 
-	// Delete via core
-	err := tc.core.DeleteNode(tc.core.GetSelectedNodeID())
+	selectedID := tc.commands.GetSelectedNodeID()
+
+	// Delete via commands interface (works with both local core and socket wrapper)
+	err := tc.commands.DeleteNode(selectedID)
 	if err != nil {
 		return
 	}
@@ -907,7 +924,7 @@ func (tc *TextCleaner) deleteSelectedNode() {
 }
 
 func (tc *TextCleaner) addChildNode() {
-	if tc.core.GetSelectedNodeID() == "" {
+	if tc.commands.GetSelectedNodeID() == "" {
 		return
 	}
 
@@ -926,10 +943,13 @@ func (tc *TextCleaner) addChildNode() {
 		condition, _ = tc.conditionEntry.GetText()
 	}
 
-	// Add child node via core
-	_, err := tc.core.AddChildNode(
-		tc.core.GetSelectedNodeID(),
-		nodeType,
+	coreNodeType := tc.getNodeTypeFromUI(nodeType)
+	parentID := tc.commands.GetSelectedNodeID()
+
+	// Add child node via commands interface (works with both local core and socket wrapper)
+	_, err := tc.commands.AddChildNode(
+		parentID,
+		coreNodeType,
 		nodeName,
 		operation,
 		arg1,
@@ -950,12 +970,12 @@ func (tc *TextCleaner) addChildNode() {
 }
 
 func (tc *TextCleaner) indentSelectedNode() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return
 	}
 
-	if err := tc.core.IndentNode(selectedID); err != nil {
+	if err := tc.commands.IndentNode(selectedID); err != nil {
 		return
 	}
 
@@ -966,12 +986,12 @@ func (tc *TextCleaner) indentSelectedNode() {
 }
 
 func (tc *TextCleaner) unindentSelectedNode() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return
 	}
 
-	if err := tc.core.UnindentNode(selectedID); err != nil {
+	if err := tc.commands.UnindentNode(selectedID); err != nil {
 		return
 	}
 
@@ -982,12 +1002,12 @@ func (tc *TextCleaner) unindentSelectedNode() {
 }
 
 func (tc *TextCleaner) moveSelectedNodeUp() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return
 	}
 
-	if err := tc.core.MoveNodeUp(selectedID); err != nil {
+	if err := tc.commands.MoveNodeUp(selectedID); err != nil {
 		return
 	}
 
@@ -998,12 +1018,12 @@ func (tc *TextCleaner) moveSelectedNodeUp() {
 }
 
 func (tc *TextCleaner) moveSelectedNodeDown() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return
 	}
 
-	if err := tc.core.MoveNodeDown(selectedID); err != nil {
+	if err := tc.commands.MoveNodeDown(selectedID); err != nil {
 		return
 	}
 
@@ -1014,16 +1034,16 @@ func (tc *TextCleaner) moveSelectedNodeDown() {
 }
 
 func (tc *TextCleaner) updateButtonStates() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	hasSelection := selectedID != ""
 
 	tc.editNodeButton.SetSensitive(hasSelection)
 	tc.deleteNodeButton.SetSensitive(hasSelection)
 	tc.addChildButton.SetSensitive(hasSelection)
-	tc.indentButton.SetSensitive(hasSelection && tc.core.CanIndentNode(selectedID))
-	tc.unindentButton.SetSensitive(hasSelection && tc.core.CanUnindentNode(selectedID))
-	tc.moveUpButton.SetSensitive(hasSelection && tc.core.CanMoveNodeUp(selectedID))
-	tc.moveDownButton.SetSensitive(hasSelection && tc.core.CanMoveNodeDown(selectedID))
+	tc.indentButton.SetSensitive(hasSelection && tc.commands.CanIndentNode(selectedID))
+	tc.unindentButton.SetSensitive(hasSelection && tc.commands.CanUnindentNode(selectedID))
+	tc.moveUpButton.SetSensitive(hasSelection && tc.commands.CanMoveNodeUp(selectedID))
+	tc.moveDownButton.SetSensitive(hasSelection && tc.commands.CanMoveNodeDown(selectedID))
 }
 
 func (tc *TextCleaner) clearNodeInputs() {
@@ -1039,7 +1059,7 @@ func (tc *TextCleaner) refreshPipelineTree() {
 	tc.treeStore.Clear()
 
 	// Add all root-level nodes from core
-	pipeline := tc.core.GetPipeline()
+	pipeline := tc.commands.GetPipeline()
 	for i, node := range pipeline {
 		tc.addNodeToTree(&node, nil, i)
 	}
@@ -1056,7 +1076,7 @@ func (tc *TextCleaner) refreshPipelineTree() {
 // updateSingleNodeDisplay updates the display text of a single node in the tree
 // without clearing the entire tree (safe to call from signal handlers)
 func (tc *TextCleaner) updateSingleNodeDisplay(nodeID string) {
-	node := tc.core.GetNode(nodeID)
+	node := tc.commands.GetNode(nodeID)
 	if node == nil {
 		return
 	}
@@ -1078,7 +1098,7 @@ func (tc *TextCleaner) updateNodeDisplayInTree(parentIter *gtk.TreeIter, nodeID 
 			// Found the node - update its display
 			displayText := tc.getNodeDisplayText(node)
 			// Only add emoji if in editing mode
-			if tc.editingMode && nodeID == tc.core.GetSelectedNodeID() {
+			if tc.editingMode && nodeID == tc.commands.GetSelectedNodeID() {
 				displayText = "✏️ " + displayText
 			}
 			tc.treeStore.SetValue(&iter, 0, displayText)
@@ -1098,7 +1118,7 @@ func (tc *TextCleaner) updateNodeDisplayInTree(parentIter *gtk.TreeIter, nodeID 
 
 // updateTreeEditingIndicators updates the display of nodes in the tree to show which node is being edited
 func (tc *TextCleaner) updateTreeEditingIndicators() {
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID == "" {
 		return // No node selected, nothing to highlight
 	}
@@ -1119,7 +1139,7 @@ func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, 
 
 		if nodeID == selectedID {
 			// Found the selected node - update its display with indicator
-			foundNode := tc.core.GetNode(nodeID)
+			foundNode := tc.commands.GetNode(nodeID)
 			if foundNode != nil {
 				displayText := tc.getNodeDisplayText(foundNode)
 				displayText = "✏️ " + displayText // Add pencil emoji indicator
@@ -1143,7 +1163,7 @@ func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, 
 // buildTreePathForNodeID builds a GTK TreePath for a node anywhere in the tree
 func (tc *TextCleaner) buildTreePathForNodeID(nodeID string) *gtk.TreePath {
 	// Find path indices to this node
-	pipeline := tc.core.GetPipeline()
+	pipeline := tc.commands.GetPipeline()
 	indices := tc.findNodePathIndices(&pipeline, nodeID)
 	if len(indices) == 0 {
 		return nil
@@ -1246,7 +1266,7 @@ func (tc *TextCleaner) getNodeTypeFromUI(nodeTypeText string) string {
 // updateTextDisplay is called after core operations to update the output display
 func (tc *TextCleaner) updateTextDisplay() {
 	// Update output buffer from core
-	tc.outputBuffer.SetText(tc.core.GetOutputText())
+	tc.outputBuffer.SetText(tc.commands.GetOutputText())
 }
 
 func (tc *TextCleaner) processText() {
@@ -1254,11 +1274,11 @@ func (tc *TextCleaner) processText() {
 	startIter, endIter := tc.inputBuffer.GetBounds()
 	input, _ := tc.inputBuffer.GetText(startIter, endIter, true)
 
-	// Process via core
-	tc.core.SetInputText(input)
+	// Process via commands interface (works with both local core and socket wrapper)
+	tc.commands.SetInputText(input)
 
 	// Update output buffer
-	tc.outputBuffer.SetText(tc.core.GetOutputText())
+	tc.outputBuffer.SetText(tc.commands.GetOutputText())
 }
 
 func (tc *TextCleaner) copyToClipboard() {
@@ -1287,11 +1307,71 @@ func (tc *TextCleaner) refreshUIFromCore() {
 	tc.updateButtonStates()
 
 	// If a node is selected, refresh its display in the node controls
-	selectedID := tc.core.GetSelectedNodeID()
+	selectedID := tc.commands.GetSelectedNodeID()
 	if selectedID != "" {
-		node := tc.core.GetNode(selectedID)
+		node := tc.commands.GetNode(selectedID)
 		if node != nil {
 			tc.loadNodeToUI(node)
 		}
+	}
+}
+
+// generateRandomSocketPath generates a random socket path in XDG_RUNTIME_DIR
+func generateRandomSocketPath() string {
+	// Use XDG_RUNTIME_DIR if available, otherwise fall back to /tmp
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if runtimeDir == "" {
+		runtimeDir = "/tmp"
+	}
+
+	// Generate a random 8-byte hex string
+	randBytes := make([]byte, 8)
+	if _, err := rand.Read(randBytes); err != nil {
+		// Fallback to a simple random suffix if rand.Read fails
+		randBytes = []byte(fmt.Sprintf("%d", time.Now().UnixNano()))
+	}
+	randomSuffix := hex.EncodeToString(randBytes)
+
+	return filepath.Join(runtimeDir, fmt.Sprintf("textcleaner-%s.sock", randomSuffix))
+}
+
+// startHeadlessChildProcess spawns the current executable as a headless socket server
+func startHeadlessChildProcess(socketPath string) (*os.Process, error) {
+	// Get the path to the current executable
+	exePath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Start the headless server in a child process
+	cmd := exec.Command(exePath, "--headless", "--socket", socketPath)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start child process: %w", err)
+	}
+
+	return cmd.Process, nil
+}
+
+// waitForSocketServer waits for a socket server to become available
+func waitForSocketServer(socketPath string, timeout time.Duration) (*SocketClient, error) {
+	deadline := time.Now().Add(timeout)
+
+	for {
+		// Try to connect
+		client, err := NewSocketClient(socketPath)
+		if err == nil {
+			return client, nil
+		}
+
+		// Check if we've exceeded the timeout
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timeout waiting for socket server at %s", socketPath)
+		}
+
+		// Wait a bit before retrying
+		time.Sleep(100 * time.Millisecond)
 	}
 }

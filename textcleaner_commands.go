@@ -53,6 +53,22 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdGetSelectedNodeID(cmd.Params)
 	case "list_nodes":
 		return tc.cmdListNodes(cmd.Params)
+	case "indent_node":
+		return tc.cmdIndentNode(cmd.Params)
+	case "unindent_node":
+		return tc.cmdUnindentNode(cmd.Params)
+	case "move_node_up":
+		return tc.cmdMoveNodeUp(cmd.Params)
+	case "move_node_down":
+		return tc.cmdMoveNodeDown(cmd.Params)
+	case "can_indent_node":
+		return tc.cmdCanIndentNode(cmd.Params)
+	case "can_unindent_node":
+		return tc.cmdCanUnindentNode(cmd.Params)
+	case "can_move_node_up":
+		return tc.cmdCanMoveNodeUp(cmd.Params)
+	case "can_move_node_down":
+		return tc.cmdCanMoveNodeDown(cmd.Params)
 	default:
 		return tc.errorResponse("Unknown action: " + cmd.Action)
 	}
@@ -263,6 +279,122 @@ func (tc *TextCleanerCore) cmdListNodes(params map[string]interface{}) string {
 	pipeline := tc.GetPipeline()
 	return tc.successResponse(map[string]interface{}{
 		"nodes": pipeline,
+	})
+}
+
+// cmdIndentNode indents a node (makes it a child of previous sibling)
+func (tc *TextCleanerCore) cmdIndentNode(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	if err := tc.IndentNode(nodeID); err != nil {
+		return tc.errorResponse(err.Error())
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// cmdUnindentNode unindents a node (makes it a sibling of its parent)
+func (tc *TextCleanerCore) cmdUnindentNode(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	if err := tc.UnindentNode(nodeID); err != nil {
+		return tc.errorResponse(err.Error())
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// cmdMoveNodeUp moves a node up in its parent's children list
+func (tc *TextCleanerCore) cmdMoveNodeUp(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	if err := tc.MoveNodeUp(nodeID); err != nil {
+		return tc.errorResponse(err.Error())
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// cmdMoveNodeDown moves a node down in its parent's children list
+func (tc *TextCleanerCore) cmdMoveNodeDown(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	if err := tc.MoveNodeDown(nodeID); err != nil {
+		return tc.errorResponse(err.Error())
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// cmdCanIndentNode returns whether a node can be indented
+func (tc *TextCleanerCore) cmdCanIndentNode(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	canIndent := tc.CanIndentNode(nodeID)
+	return tc.successResponse(map[string]interface{}{
+		"can_indent": canIndent,
+	})
+}
+
+// cmdCanUnindentNode returns whether a node can be unindented
+func (tc *TextCleanerCore) cmdCanUnindentNode(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	canUnindent := tc.CanUnindentNode(nodeID)
+	return tc.successResponse(map[string]interface{}{
+		"can_unindent": canUnindent,
+	})
+}
+
+// cmdCanMoveNodeUp returns whether a node can be moved up
+func (tc *TextCleanerCore) cmdCanMoveNodeUp(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	canMove := tc.CanMoveNodeUp(nodeID)
+	return tc.successResponse(map[string]interface{}{
+		"can_move_up": canMove,
+	})
+}
+
+// cmdCanMoveNodeDown returns whether a node can be moved down
+func (tc *TextCleanerCore) cmdCanMoveNodeDown(params map[string]interface{}) string {
+	nodeID := getStr(params, "node_id", "")
+	if nodeID == "" {
+		return tc.errorResponse("Missing required parameter: node_id")
+	}
+
+	canMove := tc.CanMoveNodeDown(nodeID)
+	return tc.successResponse(map[string]interface{}{
+		"can_move_down": canMove,
 	})
 }
 
