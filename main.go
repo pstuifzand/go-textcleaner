@@ -24,32 +24,33 @@ const (
 )
 
 type TextCleaner struct {
-	commands      TextCleanerCommands // Interface for all operations (socket wrapper)
-	headlessProc  *os.Process         // Child headless process (if started by this GUI)
-	window        *gtk.Window
-	inputView         *gtk.TextView
-	outputView        *gtk.TextView
-	inputBuffer       *gtk.TextBuffer
-	outputBuffer      *gtk.TextBuffer
-	copyButton        *gtk.Button
-	pipelineTree      *gtk.TreeView
-	treeStore         *gtk.TreeStore
-	selectedNode      *gtk.TreePath
-	nodeTypeCombo     *gtk.ComboBoxText
-	operationCombo    *gtk.ComboBoxText
-	argument1         *gtk.Entry
-	argument2         *gtk.Entry
-	conditionEntry    *gtk.Entry
-	nodeNameEntry     *gtk.Entry
-	createNodeButton  *gtk.Button
-	editNodeButton    *gtk.Button
-	deleteNodeButton  *gtk.Button
-	indentButton      *gtk.Button
-	unindentButton    *gtk.Button
-	moveUpButton      *gtk.Button
-	moveDownButton    *gtk.Button
-	addChildButton    *gtk.Button
-	editingMode       bool              // True when actively editing a node (after double-click)
+	commands         TextCleanerCommands // Interface for all operations (socket wrapper)
+	headlessProc     *os.Process         // Child headless process (if started by this GUI)
+	window           *gtk.Window
+	inputView        *gtk.TextView
+	outputView       *gtk.TextView
+	inputBuffer      *gtk.TextBuffer
+	outputBuffer     *gtk.TextBuffer
+	copyButton       *gtk.Button
+	pipelineTree     *gtk.TreeView
+	treeStore        *gtk.TreeStore
+	paletteTree      *gtk.TreeView // Operations palette tree
+	selectedNode     *gtk.TreePath
+	nodeTypeCombo    *gtk.ComboBoxText
+	operationCombo   *gtk.ComboBoxText
+	argument1        *gtk.Entry
+	argument2        *gtk.Entry
+	conditionEntry   *gtk.Entry
+	nodeNameEntry    *gtk.Entry
+	createNodeButton *gtk.Button
+	editNodeButton   *gtk.Button
+	deleteNodeButton *gtk.Button
+	indentButton     *gtk.Button
+	unindentButton   *gtk.Button
+	moveUpButton     *gtk.Button
+	moveDownButton   *gtk.Button
+	addChildButton   *gtk.Button
+	editingMode      bool // True when actively editing a node (after double-click)
 }
 
 func main() {
@@ -451,6 +452,55 @@ func (tc *TextCleaner) createNodeControls() *gtk.Box {
 	return controlsBox
 }
 
+func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
+	paletteBox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+
+	// Title label
+	titleLabel, _ := gtk.LabelNew("Operations Palette")
+	titleLabel.SetMarkup("<b>Operations</b>")
+	paletteBox.PackStart(titleLabel, false, false, 0)
+
+	// Scrolled window for the palette
+	scrolledWindow, _ := gtk.ScrolledWindowNew(nil, nil)
+	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	scrolledWindow.SetSizeRequest(200, -1)
+
+	// Create list store with two columns: display name and operation name
+	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING)
+
+	// Populate with all operations
+	operations := GetOperations()
+	for _, op := range operations {
+		iter := listStore.Append()
+		listStore.SetValue(iter, 0, op.Name)
+		listStore.SetValue(iter, 1, op.Name)
+	}
+
+	// Create tree view for the palette
+	treeView, _ := gtk.TreeViewNew()
+	tc.paletteTree = treeView
+	treeView.SetModel(listStore)
+
+	// Add column for operation name
+	renderer, _ := gtk.CellRendererTextNew()
+	column, _ := gtk.TreeViewColumnNewWithAttribute("Operation", renderer, "text", 0)
+	treeView.AppendColumn(column)
+
+	// Set properties
+	treeView.SetHeadersVisible(false)
+
+	// Enable drag source
+	targets := []gtk.TargetEntry{
+		{Target: "text/plain", Flags: gtk.TARGET_SAME_APP, Info: 0},
+	}
+	treeView.DragSourceSet(gdk.BUTTON1_MASK, targets, gdk.ACTION_COPY)
+
+	scrolledWindow.Add(treeView)
+	paletteBox.PackStart(scrolledWindow, true, true, 0)
+
+	return paletteBox
+}
+
 func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	panel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
 	panel.SetMarginTop(5)
@@ -458,17 +508,28 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	panel.SetMarginStart(5)
 	panel.SetMarginEnd(5)
 
+	// Create horizontal paned for palette and pipeline sections
+	mainPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
+	mainPaned.SetPosition(220) // Palette width
+
+	// ===== LEFT SECTION: Operations Palette =====
+	palettePanel := tc.createOperationsPalette()
+	mainPaned.Add1(palettePanel)
+
+	// ===== RIGHT SECTION: Controls and Tree =====
+	rightPanel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
+
 	// Create paned layout for controls and tree
 	paned, _ := gtk.PanedNew(gtk.ORIENTATION_VERTICAL)
 	paned.SetPosition(380) // Controls panel height
 
-	// ===== TOP SECTION: Node Controls =====
+	// Top: Node Controls
 	nodeControls := tc.createNodeControls()
 	controlsFrame, _ := gtk.FrameNew("Node Controls")
 	controlsFrame.Add(nodeControls)
 	paned.Add1(controlsFrame)
 
-	// ===== BOTTOM SECTION: Pipeline Tree =====
+	// Bottom: Pipeline Tree
 	treePanel, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 5)
 
 	// Title label
@@ -498,12 +559,21 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	// Set properties
 	treeView.SetHeadersVisible(false)
 
+	// Enable drag destination for the pipeline tree
+	targets := []gtk.TargetEntry{
+		{Target: "text/plain", Flags: gtk.TARGET_SAME_APP, Info: 0},
+	}
+	treeView.DragDestSet(gtk.DEST_DEFAULT_ALL, targets, gdk.ACTION_COPY)
+
 	scrolledWindow.Add(treeView)
 	treePanel.PackStart(scrolledWindow, true, true, 0)
 
 	paned.Add2(treePanel)
 
-	panel.PackStart(paned, true, true, 0)
+	rightPanel.PackStart(paned, true, true, 0)
+	mainPaned.Add2(rightPanel)
+
+	panel.PackStart(mainPaned, true, true, 0)
 
 	return panel
 }
@@ -563,6 +633,9 @@ func (tc *TextCleaner) setupEventHandlers() {
 	tc.pipelineTree.Connect("row-activated", func() {
 		tc.openNodeForEditing()
 	})
+
+	// Drag and drop handlers for operations palette
+	tc.setupDragAndDrop()
 
 	// Create Node button
 	tc.createNodeButton.Connect("clicked", func() {
@@ -642,6 +715,128 @@ func (tc *TextCleaner) setupEventHandlers() {
 			tc.updateNodeFromUIFields()
 		}
 	})
+}
+
+func (tc *TextCleaner) setupDragAndDrop() {
+	// Palette drag source: provide operation name when dragging
+	tc.paletteTree.Connect("drag-data-get", func(widget *gtk.TreeView, context *gdk.DragContext, data *gtk.SelectionData, info uint, time uint) {
+		// Get selected operation from palette
+		selection, _ := widget.GetSelection()
+		model, iter, ok := selection.GetSelected()
+		if !ok {
+			return
+		}
+
+		// Get operation name from column 1
+		val, _ := model.(*gtk.TreeModel).GetValue(iter, 1)
+		operationName, _ := val.GetString()
+
+		// Set the selection data to the operation name
+		data.SetText(operationName)
+	})
+
+	// Pipeline tree drag destination: create node when operation is dropped
+	tc.pipelineTree.Connect("drag-data-received", func(widget *gtk.TreeView, context *gdk.DragContext, x int, y int, data *gtk.SelectionData, info uint, time uint) {
+		// Get the operation name from the drag data
+		operationName := data.GetText()
+		if operationName == "" {
+			return
+		}
+
+		// Get the drop position
+		var path *gtk.TreePath
+		var pos gtk.TreeViewDropPosition
+		widget.GetDestRowAtPos(x, y, &path, &pos)
+
+		var parentID string
+		if path != nil {
+			// Get the node ID at the drop position
+			iter, _ := tc.treeStore.GetIter(path)
+			val, _ := tc.treeStore.GetValue(iter, 1)
+			nodeID, _ := val.GetString()
+
+			// If dropping on a node, determine if it should be a child or sibling
+			if pos == gtk.TREE_VIEW_DROP_INTO_OR_BEFORE || pos == gtk.TREE_VIEW_DROP_INTO_OR_AFTER {
+				// Drop as child of the target node
+				parentID = nodeID
+			} else {
+				// Drop as sibling - find parent of target node
+				parentNode := tc.findParentNode(nodeID)
+				if parentNode != nil {
+					parentID = parentNode.ID
+				}
+			}
+		}
+
+		// Create the new node
+		var newNodeID string
+		if parentID != "" {
+			// Add as child node
+			newNodeID, _ = tc.commands.AddChildNode(
+				parentID,
+				"operation",
+				operationName,
+				operationName,
+				"",
+				"",
+				"",
+			)
+		} else {
+			// Add as root node
+			newNodeID = tc.commands.CreateNode(
+				"operation",
+				operationName,
+				operationName,
+				"",
+				"",
+				"",
+			)
+		}
+
+		// Refresh UI
+		tc.refreshPipelineTree()
+		tc.updateTextDisplay()
+
+		// Select and enter editing mode for the new node
+		tc.commands.SelectNode(newNodeID)
+		node := tc.commands.GetNode(newNodeID)
+		if node != nil {
+			tc.loadNodeToUI(node)
+			tc.editingMode = true
+			tc.updateTreeEditingIndicators()
+		}
+		tc.updateButtonStates()
+
+		// Finish the drag operation
+		context.FinishDrag(true, false, time)
+	})
+}
+
+func (tc *TextCleaner) findParentNode(nodeID string) *PipelineNode {
+	pipeline := tc.commands.GetPipeline()
+	return tc.findParentNodeRecursive(&pipeline, nodeID, nil)
+}
+
+func (tc *TextCleaner) findParentNodeRecursive(nodes *[]PipelineNode, targetID string, parent *PipelineNode) *PipelineNode {
+	for i := range *nodes {
+		node := &(*nodes)[i]
+
+		// Check if this node is the target
+		if node.ID == targetID {
+			return parent
+		}
+
+		// Search in children
+		if result := tc.findParentNodeRecursive(&node.Children, targetID, node); result != nil {
+			return result
+		}
+
+		// Search in else children
+		if result := tc.findParentNodeRecursive(&node.ElseChildren, targetID, node); result != nil {
+			return result
+		}
+	}
+	return nil
 }
 
 func (tc *TextCleaner) updateNodeTypeUI() {
@@ -1283,7 +1478,6 @@ func (tc *TextCleaner) getNodeTypeFromUI(nodeTypeText string) string {
 	}
 	return "operation"
 }
-
 
 // updateTextDisplay is called after core operations to update the output display
 func (tc *TextCleaner) updateTextDisplay() {
