@@ -32,11 +32,18 @@ Options:
         Listen on Unix socket at this path for session persistence (e.g., /tmp/textcleaner.sock)
   -headless
         Run in headless mode (server only, no GUI). Requires --socket flag.
+  -log-json
+        Log raw JSON commands in headless mode
+  -log-commands
+        Log formatted commands in headless mode (with truncated arguments and responses)
 
 Examples:
   ./go-textcleaner                                      # Start GUI only
   ./go-textcleaner --headless --socket /tmp/text.sock  # Start headless server
   ./go-textcleaner --socket /tmp/text.sock             # Connect GUI to running server
+  ./go-textcleaner --headless --socket /tmp/text.sock --log-commands  # Headless with formatted logging
+  ./go-textcleaner --headless --socket /tmp/text.sock --log-json      # Headless with JSON logging
+  ./go-textcleaner --headless --socket /tmp/text.sock --log-json --log-commands  # Both logging modes
 ```
 
 ### Running Tests
@@ -120,6 +127,73 @@ The test client:
 - **Persistent state**: Data persists in the server even after all clients disconnect
 - **Concurrent clients**: All client types (GUIs, test clients, custom scripts) can connect simultaneously
 
+### Command Logging in Headless Mode
+
+The headless server supports two types of command logging to help you monitor and debug socket interactions:
+
+#### JSON Logging (`--log-json`)
+Logs the raw JSON commands exactly as received from clients:
+
+```bash
+./go-textcleaner --headless --socket /tmp/text.sock --log-json
+```
+
+Example output:
+```
+TextCleaner headless server listening on /tmp/textcleaner.sock
+JSON command logging: enabled
+Press Ctrl+C to stop
+[JSON] {"action":"create_node","params":{"type":"operation","name":"Uppercase","operation":"Uppercase","arg1":"","arg2":"","condition":""}}
+[JSON] {"action":"set_input_text","params":{"text":"hello world"}}
+[JSON] {"action":"get_output_text","params":{}}
+```
+
+#### Formatted Command Logging (`--log-commands`)
+Logs human-readable formatted commands with truncated arguments and responses:
+
+```bash
+./go-textcleaner --headless --socket /tmp/text.sock --log-commands
+```
+
+Example output:
+```
+TextCleaner headless server listening on /tmp/textcleaner.sock
+Formatted command logging: enabled
+Press Ctrl+C to stop
+[CMD] create_node(operation: Uppercase) => OK (node_id=node_0)
+[CMD] set_input_text(hello world) => OK
+[CMD] get_output_text() => OK (output=HELLO WORLD)
+[CMD] export_pipeline() => OK (pipeline: 245 bytes)
+```
+
+**Truncation behavior:**
+- Node IDs: truncated to 20 characters
+- Node names: truncated to 30 characters
+- Text arguments: truncated to 50 characters
+- Error messages: truncated to 100 characters
+- Long responses show byte count instead of full content (e.g., pipelines)
+
+#### Using Both Logging Modes
+You can enable both logging modes simultaneously for maximum visibility:
+
+```bash
+./go-textcleaner --headless --socket /tmp/text.sock --log-json --log-commands
+```
+
+Example output:
+```
+TextCleaner headless server listening on /tmp/textcleaner.sock
+JSON command logging: enabled
+Formatted command logging: enabled
+Press Ctrl+C to stop
+[JSON] {"action":"create_node","params":{"type":"operation","name":"Uppercase","operation":"Uppercase","arg1":"","arg2":"","condition":""}}
+[CMD] create_node(operation: Uppercase) => OK (node_id=node_0)
+```
+
+**Use cases:**
+- `--log-json`: Debugging protocol issues, command replay, or integration testing
+- `--log-commands`: Monitoring server activity, user behavior analysis, or audit trails
+- Both flags: Comprehensive logging for troubleshooting complex issues
 
 ### Running in Different Modes
 
@@ -476,5 +550,5 @@ Both GUIs in Terminals 2 and 3 will see the changes in real-time.
 - [ ] Add session management
 - [ ] Add HTTP/REST API wrapper around socket
 - [ ] Add WebSocket support for browser clients
-- [ ] Add command logging/auditing for socket operations
+- [x] Add command logging/auditing for socket operations (implemented with `--log-json` and `--log-commands` flags)
 - [ ] Add undo/redo across both GUI and socket interfaces
