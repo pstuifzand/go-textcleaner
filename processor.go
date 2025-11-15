@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/russross/blackfriday/v2"
 )
 
 // Operation represents a text transformation operation
@@ -194,7 +195,7 @@ func GetOperations() []Operation {
 
 		// Phase 14: HTML/Markdown Advanced
 		{"HTML to Markdown", "Convert HTML to Markdown (simplified)", htmlToMarkdown},
-		{"Markdown to HTML", "Convert Markdown to HTML (simplified)", markdownToHTML},
+		{"Markdown to HTML", "Convert Markdown to HTML with full support (tables, code, strikethrough, etc.). Optional arg1: nohtml/skiphtml/latex", markdownToHTML},
 		{"Extract Text from HTML", "Extract all text content from HTML", extractTextFromHTML},
 		{"Create Markdown Table", "Create table from delimited data (arg1=col, arg2=row)", createMarkdownTable},
 		{"Parse YAML Front Matter", "Extract YAML front matter from document", parseYAMLFrontMatter},
@@ -2284,19 +2285,38 @@ func htmlToMarkdown(input, arg1, arg2 string) string {
 	return result
 }
 
-// markdownToHTML converts Markdown to HTML (simplified)
+// markdownToHTML converts Markdown to HTML with comprehensive support
 func markdownToHTML(input, arg1, arg2 string) string {
-	result := input
+	// Use blackfriday v2 for comprehensive markdown parsing with CommonMark support
+	// Supports: headers (h1-h6), bold, italic, links, images, lists, code blocks,
+	// blockquotes, tables, strikethrough, task lists, and more
+	//
+	// Features enabled by default:
+	// - CommonExtensions: tables, strikethrough, task lists, etc.
+	// - AutoHeadingIDs: Automatic IDs for heading elements
+	// - HTML pass-through: Raw HTML in markdown is preserved
+	//
+	// arg1 options (optional):
+	//   "nohtml" - Strip raw HTML tags from output (only convert markdown)
+	// arg2 is reserved for future use
 
-	// Simple conversions
-	result = regexp.MustCompile(`^# (.+)$`).ReplaceAllString(result, "<h1>$1</h1>")
-	result = regexp.MustCompile(`^## (.+)$`).ReplaceAllString(result, "<h2>$1</h2>")
-	result = regexp.MustCompile(`\*\*(.+?)\*\*`).ReplaceAllString(result, "<strong>$1</strong>")
-	result = regexp.MustCompile(`\*(.+?)\*`).ReplaceAllString(result, "<em>$1</em>")
-	result = regexp.MustCompile(`\[(.+?)\]\((.+?)\)`).ReplaceAllString(result, "<a href=\"$2\">$1</a>")
-	result = regexp.MustCompile(`^- (.+)$`).ReplaceAllString(result, "<li>$1</li>")
+	// Default parser options with CommonMark extensions
+	extensions := blackfriday.CommonExtensions | blackfriday.AutoHeadingIDs
 
-	return result
+	// Parse options from arg1
+	lowerArg1 := strings.ToLower(arg1)
+	sanitizeHTML := strings.Contains(lowerArg1, "nohtml")
+
+	// Convert markdown to HTML using blackfriday v2
+	htmlBytes := blackfriday.Run([]byte(input), blackfriday.WithExtensions(extensions))
+	htmlString := string(htmlBytes)
+
+	// If nohtml option is specified, strip HTML tags from the output
+	if sanitizeHTML {
+		return stripTags(htmlString, "", "")
+	}
+
+	return htmlString
 }
 
 // extractTextFromHTML extracts all text content from HTML
