@@ -41,6 +41,9 @@ type PipelineNode struct {
 // GetOperations returns all available text operations
 func GetOperations() []Operation {
 	return []Operation{
+		// Identity (no-op) operation
+		{"Identity", identity},
+
 		// Basic case operations
 		{"Uppercase", uppercase},
 		{"Lowercase", lowercase},
@@ -332,6 +335,11 @@ func executeSequenceNode(node *PipelineNode, input string) string {
 }
 
 // Operation implementations
+
+// identity returns the input unchanged (no-op operation)
+func identity(input, arg1, arg2 string) string {
+	return input
+}
 
 func uppercase(input, arg1, arg2 string) string {
 	return strings.ToUpper(input)

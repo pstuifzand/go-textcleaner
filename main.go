@@ -42,6 +42,7 @@ type TextCleaner struct {
 	moveUpButton      *gtk.Button
 	moveDownButton    *gtk.Button
 	addChildButton    *gtk.Button
+	editingMode       bool              // True when actively editing a node (after double-click)
 }
 
 func main() {
@@ -573,34 +574,41 @@ func (tc *TextCleaner) setupEventHandlers() {
 
 	// ===== REAL-TIME NODE EDITING =====
 	// Wire up auto-update handlers for node property fields
-	// When any field is edited, automatically update the node and refresh output
+	// Only update when in editing mode (after double-click)
 
-	// Node name field - auto-update when edited
+	// Node name field - auto-update when edited (only in editing mode)
 	tc.nodeNameEntry.Connect("changed", func() {
-		tc.updateNodeFromUIFields()
-	})
-
-	// Operation combo - auto-update when changed
-	tc.operationCombo.Connect("changed", func() {
-		// Only update if we're currently editing a node
-		if tc.core.GetSelectedNodeID() != "" {
+		if tc.editingMode {
 			tc.updateNodeFromUIFields()
 		}
 	})
 
-	// Argument 1 - auto-update when edited
+	// Operation combo - auto-update when changed (only in editing mode)
+	tc.operationCombo.Connect("changed", func() {
+		if tc.editingMode && tc.core.GetSelectedNodeID() != "" {
+			tc.updateNodeFromUIFields()
+		}
+	})
+
+	// Argument 1 - auto-update when edited (only in editing mode)
 	tc.argument1.Connect("changed", func() {
-		tc.updateNodeFromUIFields()
+		if tc.editingMode {
+			tc.updateNodeFromUIFields()
+		}
 	})
 
-	// Argument 2 - auto-update when edited
+	// Argument 2 - auto-update when edited (only in editing mode)
 	tc.argument2.Connect("changed", func() {
-		tc.updateNodeFromUIFields()
+		if tc.editingMode {
+			tc.updateNodeFromUIFields()
+		}
 	})
 
-	// Condition field - auto-update when edited
+	// Condition field - auto-update when edited (only in editing mode)
 	tc.conditionEntry.Connect("changed", func() {
-		tc.updateNodeFromUIFields()
+		if tc.editingMode {
+			tc.updateNodeFromUIFields()
+		}
 	})
 }
 
@@ -650,15 +658,30 @@ func (tc *TextCleaner) openNodeForEditing() {
 		tc.core.SelectNode(nodeID)
 		tc.loadNodeToUI(foundNode)
 		tc.updateButtonStates()
+		// Enter editing mode - real-time updates will now be active
+		tc.editingMode = true
+		// Update the tree to show editing indicator (✏️)
+		tc.updateSingleNodeDisplay(nodeID)
 	}
 }
 
 func (tc *TextCleaner) updateTreeSelection() {
+	// Save the previously selected node ID before changing selection
+	oldSelectedID := tc.core.GetSelectedNodeID()
+
+	// Single-click stops editing mode
+	tc.editingMode = false
+	tc.clearNodeInputs()
+
 	selection, _ := tc.pipelineTree.GetSelection()
 	_, iter, ok := selection.GetSelected()
 	if !ok {
 		tc.core.SelectNode("")
 		tc.updateButtonStates()
+		// Remove editing indicator from previously selected node
+		if oldSelectedID != "" {
+			tc.updateSingleNodeDisplay(oldSelectedID)
+		}
 		return
 	}
 
@@ -675,8 +698,16 @@ func (tc *TextCleaner) updateTreeSelection() {
 	}
 
 	tc.updateButtonStates()
-	// Update visual indicator in tree
-	tc.updateTreeEditingIndicators()
+
+	// Remove the editing indicator from the previously selected node
+	if oldSelectedID != "" && oldSelectedID != nodeID {
+		tc.updateSingleNodeDisplay(oldSelectedID)
+	}
+
+	// Update the newly selected node (without editing indicator since editingMode is false)
+	if nodeID != "" {
+		tc.updateSingleNodeDisplay(nodeID)
+	}
 }
 
 func (tc *TextCleaner) loadNodeToUI(node *PipelineNode) {
@@ -714,19 +745,27 @@ func (tc *TextCleaner) loadNodeToUI(node *PipelineNode) {
 }
 
 func (tc *TextCleaner) createNewNode() {
+	// For Operation nodes, default to "Untitled" name and "Identity" operation
+	// For other types, use the default empty name
 	nodeType := tc.nodeTypeCombo.GetActiveText()
-	nodeName, _ := tc.nodeNameEntry.GetText()
+
+	// Default to "Untitled" if no name provided
+	nodeName := "Untitled"
 	operation := ""
 	arg1 := ""
 	arg2 := ""
 	condition := ""
 
 	if nodeType == "Operation" {
-		operation = tc.operationCombo.GetActiveText()
-		arg1, _ = tc.argument1.GetText()
-		arg2, _ = tc.argument2.GetText()
+		// For operation nodes, default to "Identity" (no-op)
+		operation = "Identity"
 	} else if nodeType == "If (Conditional)" {
-		condition, _ = tc.conditionEntry.GetText()
+		// Conditional nodes have no operation
+		nodeName = "If"
+	} else if nodeType == "ForEachLine" {
+		nodeName = "ForEach"
+	} else if nodeType == "Group" {
+		nodeName = "Group"
 	}
 
 	// Create node via core
@@ -743,16 +782,18 @@ func (tc *TextCleaner) createNewNode() {
 	tc.refreshPipelineTree()
 	tc.updateTextDisplay()
 
-	// Select the newly created node
+	// Select and enter editing mode for the newly created node
 	tc.core.SelectNode(nodeID)
 	node := tc.core.GetNode(nodeID)
 	if node != nil {
 		tc.loadNodeToUI(node)
+		tc.editingMode = true
+		tc.updateTreeEditingIndicators()
 	}
 	tc.updateButtonStates()
 
-	// Clear inputs
-	tc.clearNodeInputs()
+	// Clear the form inputs (they will be refilled from the node)
+	// Don't clear here since we just loaded the node values above
 }
 
 func (tc *TextCleaner) updateSelectedNode() {
@@ -837,8 +878,13 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 		return
 	}
 
-	// Refresh UI to show changes in real-time
-	tc.refreshPipelineTree()
+	// Update UI to show changes in real-time
+	// Only update the single node display and output, don't refresh entire tree
+	// (to avoid segfault from modifying tree during signal handling)
+	node := tc.core.GetNode(selectedID)
+	if node != nil {
+		tc.updateSingleNodeDisplay(selectedID)
+	}
 	tc.updateTextDisplay()
 }
 
@@ -1007,6 +1053,49 @@ func (tc *TextCleaner) refreshPipelineTree() {
 	tc.updateTreeEditingIndicators()
 }
 
+// updateSingleNodeDisplay updates the display text of a single node in the tree
+// without clearing the entire tree (safe to call from signal handlers)
+func (tc *TextCleaner) updateSingleNodeDisplay(nodeID string) {
+	node := tc.core.GetNode(nodeID)
+	if node == nil {
+		return
+	}
+
+	// Find the node in the tree and update its display
+	tc.updateNodeDisplayInTree(nil, nodeID, node)
+}
+
+// updateNodeDisplayInTree recursively finds and updates a node's display text in the tree store
+func (tc *TextCleaner) updateNodeDisplayInTree(parentIter *gtk.TreeIter, nodeID string, node *PipelineNode) bool {
+	var iter gtk.TreeIter
+	hasIter := tc.treeStore.IterChildren(parentIter, &iter)
+
+	for hasIter {
+		val, _ := tc.treeStore.GetValue(&iter, 1)
+		currentNodeID, _ := val.GetString()
+
+		if currentNodeID == nodeID {
+			// Found the node - update its display
+			displayText := tc.getNodeDisplayText(node)
+			// Only add emoji if in editing mode
+			if tc.editingMode && nodeID == tc.core.GetSelectedNodeID() {
+				displayText = "✏️ " + displayText
+			}
+			tc.treeStore.SetValue(&iter, 0, displayText)
+			return true
+		}
+
+		// Recursively search children
+		if tc.updateNodeDisplayInTree(&iter, nodeID, node) {
+			return true
+		}
+
+		hasIter = tc.treeStore.IterNext(&iter)
+	}
+
+	return false
+}
+
 // updateTreeEditingIndicators updates the display of nodes in the tree to show which node is being edited
 func (tc *TextCleaner) updateTreeEditingIndicators() {
 	selectedID := tc.core.GetSelectedNodeID()
@@ -1020,14 +1109,12 @@ func (tc *TextCleaner) updateTreeEditingIndicators() {
 
 // updateNodeDisplayWithIndicator recursively updates tree nodes to add/remove editing indicator
 func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, selectedID string) bool {
-	iter := tc.treeStore.IterChildren(parentIter)
-	if iter == nil {
-		return false
-	}
+	var iter gtk.TreeIter
+	hasIter := tc.treeStore.IterChildren(parentIter, &iter)
 
-	for {
+	for hasIter {
 		// Get node ID from column 1
-		val, _ := tc.treeStore.GetValue(iter, 1)
+		val, _ := tc.treeStore.GetValue(&iter, 1)
 		nodeID, _ := val.GetString()
 
 		if nodeID == selectedID {
@@ -1036,20 +1123,18 @@ func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, 
 			if foundNode != nil {
 				displayText := tc.getNodeDisplayText(foundNode)
 				displayText = "✏️ " + displayText // Add pencil emoji indicator
-				tc.treeStore.SetValue(iter, 0, displayText)
+				tc.treeStore.SetValue(&iter, 0, displayText)
 			}
 			return true
 		}
 
 		// Recursively search children
-		if tc.updateNodeDisplayWithIndicator(iter, selectedID) {
+		if tc.updateNodeDisplayWithIndicator(&iter, selectedID) {
 			return true
 		}
 
 		// Move to next sibling
-		if !tc.treeStore.IterNext(iter) {
-			break
-		}
+		hasIter = tc.treeStore.IterNext(&iter)
 	}
 
 	return false
