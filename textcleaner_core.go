@@ -487,9 +487,12 @@ func (tc *TextCleanerCore) GetInputText() string {
 
 // GetOutputText returns the current output text
 func (tc *TextCleanerCore) GetOutputText() string {
-	tc.mu.RLock()
-	defer tc.mu.RUnlock()
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
 
+	// Reprocess the pipeline to ensure output is always up-to-date
+	// This handles cases where the pipeline was modified after input was set
+	tc.processText()
 	return tc.outputText
 }
 

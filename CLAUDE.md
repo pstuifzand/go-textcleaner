@@ -542,7 +542,375 @@ Both GUIs in Terminals 2 and 3 will see the changes in real-time.
    # The same pipeline and input/output are restored!
    ```
 
+## Interactive REPL Interface
+
+### Overview
+The REPL (Read-Eval-Print Loop) provides a user-friendly command-line interface to interact with the socket server. Instead of writing raw JSON commands, users can type natural language commands using a simple verb-first syntax.
+
+### Features
+- **Verb-first command syntax** - Natural language commands like `create node Uppercase operation Uppercase`
+- **Command history** - Navigate previous commands with arrow keys
+- **Colored output** - Success (green), errors (red), info (cyan) for better readability
+- **Multiple output formats** - Tables for lists, tree view for pipelines, formatted JSON for data
+- **Tab completion** - Command names auto-complete with Tab key
+- **Real-time feedback** - Immediate response to all commands
+
+### Running the REPL
+
+#### Prerequisites
+The socket server must be running before starting the REPL:
+
+```bash
+# Terminal 1: Start headless server
+./go-textcleaner --headless --socket /tmp/textcleaner.sock
+```
+
+#### Start the REPL
+
+```bash
+# Terminal 2: Start REPL (requires running server)
+./go-textcleaner --repl --socket /tmp/textcleaner.sock
+```
+
+Output:
+```
+TextCleaner REPL v1.0
+Connected to socket server at /tmp/textcleaner.sock
+Type 'help' for available commands
+
+textcleaner>
+```
+
+### Command Syntax
+
+#### Node Management
+
+**Create a root-level node:**
+```
+create node <name> [operation] [arg1] [arg2] [condition]
+```
+Examples:
+```
+textcleaner> create node Uppercase operation Uppercase
+✓ Created node: node_0
+
+textcleaner> create node Replace operation Replace foo bar
+✓ Created node: node_1
+```
+
+**Create a child node:**
+```
+create child <parent_id> <name> [operation] [arg1] [arg2]
+```
+Example:
+```
+textcleaner> create child node_0 Lowercase operation Lowercase
+✓ Created child node: node_2
+```
+
+**Update a node:**
+```
+update node <node_id> <name> [operation] [arg1] [arg2]
+```
+Example:
+```
+textcleaner> update node node_0 MyNode operation Uppercase
+✓ Updated node: node_0
+```
+
+**Delete a node:**
+```
+delete node <node_id>
+```
+Example:
+```
+textcleaner> delete node node_1
+✓ Deleted node: node_1
+```
+
+**Select a node:**
+```
+select node <node_id>
+```
+Example:
+```
+textcleaner> select node node_0
+✓ Selected node: node_0
+```
+
+#### Tree Operations
+
+**Indent a node (make it a child of previous sibling):**
+```
+indent <node_id>
+```
+
+**Unindent a node (make it a sibling of its parent):**
+```
+unindent <node_id>
+```
+
+**Move a node up or down:**
+```
+move up <node_id>
+move down <node_id>
+```
+
+#### Query Commands
+
+**Show a specific node:**
+```
+show node <node_id>
+```
+Output: Pretty-printed node JSON
+
+**Show the pipeline:**
+```
+show pipeline     # Shows as JSON
+show tree         # Shows as indented tree view
+```
+
+**List all root nodes:**
+```
+list nodes
+```
+Output: Formatted ASCII table
+
+**Get input text:**
+```
+get input
+```
+
+**Get processed output:**
+```
+get output
+```
+
+**Get currently selected node:**
+```
+get selected
+```
+
+#### Text Processing
+
+**Set input text:**
+```
+set input <text>
+set input                    (multiline mode - enter text, end with blank line)
+```
+Examples:
+```
+textcleaner> set input hello world
+✓ Input text set
+
+textcleaner> set input
+ℹ Enter text (end with blank line):
+This is line 1
+This is line 2
+This is line 3
+
+✓ Input text set
+```
+
+#### Pipeline Management
+
+**Export the pipeline:**
+```
+export
+```
+Output: Pipeline as formatted JSON
+
+**Import a pipeline:**
+```
+import <json>
+import                       (multiline mode - enter JSON, end with blank line)
+```
+Examples:
+```
+textcleaner> import [{"id":"node_0","name":"Uppercase","operation":"Uppercase"}]
+✓ Pipeline imported
+
+textcleaner> import
+ℹ Enter JSON pipeline (end with blank line):
+[
+  {
+    "id": "node_0",
+    "name": "Uppercase",
+    "operation": "Uppercase",
+    "type": "operation"
+  }
+]
+
+✓ Pipeline imported
+```
+
+#### Utility Commands
+
+**Show help:**
+```
+help [command]
+```
+Examples:
+```
+textcleaner> help              # Show all commands
+textcleaner> help create       # Show help for create command
+```
+
+**List available node types and operations:**
+```
+info [types]
+```
+Example:
+```
+textcleaner> info
+textcleaner> info types
+```
+Output: Shows available node types (operation, if, foreach, group) and all available operations in a formatted table.
+
+**Clear the screen:**
+```
+clear
+```
+
+**Exit the REPL:**
+```
+quit
+exit
+```
+
+### Example Workflow
+
+```bash
+# Terminal 1: Start server
+./go-textcleaner --headless --socket /tmp/textcleaner.sock
+
+# Terminal 2: Start REPL
+./go-textcleaner --repl --socket /tmp/textcleaner.sock
+
+# In REPL:
+textcleaner> info types
+ℹ Available Node Types:
+  • operation
+  • if
+  • foreach
+  • group
+
+ℹ Available Operations:
+(shows all 100+ available operations in a formatted table)
+
+textcleaner> create node Uppercase operation Uppercase
+✓ Created node: node_0
+
+textcleaner> set input hello world
+✓ Input text set
+
+textcleaner> get output
+HELLO WORLD
+
+textcleaner> show tree
+└─ Uppercase [Uppercase] (node_0)
+
+textcleaner> create child node_0 Lowercase operation Lowercase
+✓ Created child node: node_1
+
+textcleaner> get output
+hello world
+
+textcleaner> list nodes
+ID                 Name             Type         Operation
+---                ----             ----         ---------
+node_0             Uppercase        operation    Uppercase
+node_1             Lowercase        operation    Lowercase
+
+textcleaner> quit
+Goodbye!
+```
+
+### Output Examples
+
+#### Table Output (list nodes)
+```
+ID                 Name             Type         Operation
+---                ----             ----         ---------
+node_0             Uppercase        operation    Uppercase
+node_1             Replace          operation    Replace
+node_2             Lowercase        operation    Lowercase
+```
+
+#### Tree Output (show tree)
+```
+├─ Uppercase [Uppercase] (node_0)
+│  └─ Lowercase [Lowercase] (node_1)
+└─ Replace [Replace] (node_2)
+```
+
+#### JSON Output (show pipeline, export)
+```json
+[
+  {
+    "id": "node_0",
+    "name": "Uppercase",
+    "operation": "Uppercase",
+    "type": "operation",
+    "arg1": "",
+    "arg2": "",
+    "condition": "",
+    "children": [
+      {
+        "id": "node_1",
+        "name": "Lowercase",
+        "operation": "Lowercase",
+        ...
+      }
+    ]
+  }
+]
+```
+
+### Tips & Tricks
+
+1. **Fast Navigation**: Use arrow keys to navigate command history
+2. **Tab Completion**: Press Tab to auto-complete command names
+3. **Quoted Arguments**: Use quotes for arguments with spaces:
+   ```
+   set input "hello world with spaces"
+   ```
+4. **View Real-time Changes**: Keep REPL and GUI windows side-by-side to see changes reflected in real-time
+5. **Stack Operations**: Chain multiple commands to test pipeline:
+   ```
+   create node MyNode operation Identity
+   set input "test text"
+   get output
+   show tree
+   ```
+
+### Troubleshooting
+
+**Error: "no socket server running"**
+```
+Start the headless server first:
+./go-textcleaner --headless --socket /tmp/textcleaner.sock
+```
+
+**Error: "node not found"**
+```
+Make sure the node ID is correct. Use 'show tree' or 'list nodes' to see available nodes.
+```
+
+**Command not recognized**
+```
+Type 'help' to see all available commands.
+```
+
 ### Future Enhancements
+
+- [ ] Multi-line input for complex text
+- [ ] Command aliases (e.g., `cn` for `create node`)
+- [ ] Undo/redo commands
+- [ ] Scripting mode (read commands from file)
+- [ ] Output redirection (save to file)
+
+### Future Enhancements (Global)
 
 - [ ] Add TCP socket support (for remote connections)
 - [ ] Add authentication/authorization
@@ -551,4 +919,5 @@ Both GUIs in Terminals 2 and 3 will see the changes in real-time.
 - [ ] Add HTTP/REST API wrapper around socket
 - [ ] Add WebSocket support for browser clients
 - [x] Add command logging/auditing for socket operations (implemented with `--log-json` and `--log-commands` flags)
+- [x] Add REPL interface for interactive socket server access
 - [ ] Add undo/redo across both GUI and socket interfaces

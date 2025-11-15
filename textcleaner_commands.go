@@ -69,6 +69,8 @@ func (tc *TextCleanerCore) ExecuteCommand(cmdJSON string) string {
 		return tc.cmdCanMoveNodeUp(cmd.Params)
 	case "can_move_node_down":
 		return tc.cmdCanMoveNodeDown(cmd.Params)
+	case "list_node_types":
+		return tc.cmdListNodeTypes(cmd.Params)
 	default:
 		return tc.errorResponse("Unknown action: " + cmd.Action)
 	}
@@ -395,6 +397,22 @@ func (tc *TextCleanerCore) cmdCanMoveNodeDown(params map[string]interface{}) str
 	canMove := tc.CanMoveNodeDown(nodeID)
 	return tc.successResponse(map[string]interface{}{
 		"can_move_down": canMove,
+	})
+}
+
+// cmdListNodeTypes returns available node types and operations
+func (tc *TextCleanerCore) cmdListNodeTypes(params map[string]interface{}) string {
+	nodeTypes := []string{"operation", "if", "foreach", "group"}
+
+	operations := GetOperations()
+	operationNames := make([]string, len(operations))
+	for i, op := range operations {
+		operationNames[i] = op.Name
+	}
+
+	return tc.successResponse(map[string]interface{}{
+		"node_types": nodeTypes,
+		"operations": operationNames,
 	})
 }
 

@@ -56,6 +56,7 @@ func main() {
 	// Parse command-line flags
 	socketPath := flag.String("socket", "", "Listen on Unix socket at this path (e.g., /tmp/textcleaner.sock)")
 	headless := flag.Bool("headless", false, "Run in headless mode (server only, no GUI)")
+	repl := flag.Bool("repl", false, "Run REPL mode (requires --socket)")
 	logJSON := flag.Bool("log-json", false, "Log raw JSON commands in headless mode")
 	logCommands := flag.Bool("log-commands", false, "Log formatted commands in headless mode")
 	flag.Parse()
@@ -69,6 +70,15 @@ func main() {
 			log.Fatalf("Error: --headless requires --socket to specify socket path\n")
 		}
 		runHeadlessServer(*socketPath, core, *logJSON, *logCommands)
+		return
+	}
+
+	// If REPL mode, start REPL and exit
+	if *repl {
+		if *socketPath == "" {
+			log.Fatalf("Error: --repl requires --socket to specify socket path\n")
+		}
+		runREPLMode(*socketPath)
 		return
 	}
 
@@ -155,6 +165,18 @@ func runHeadlessServer(socketPath string, core *TextCleanerCore, logJSON bool, l
 	// Wait for shutdown signal (handled by the server itself)
 	server.Wait()
 	fmt.Println("Server stopped")
+}
+
+// runREPLMode starts a REPL session connected to a socket server
+func runREPLMode(socketPath string) {
+	session, err := NewREPLSession(socketPath)
+	if err != nil {
+		log.Fatalf("Error: Failed to connect to socket server: %v\n", err)
+	}
+
+	if err := session.Run(); err != nil {
+		log.Fatalf("Error: REPL error: %v\n", err)
+	}
 }
 
 // loadStateFromSocket loads the current state from a socket server via an existing client
