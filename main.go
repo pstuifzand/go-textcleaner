@@ -270,7 +270,7 @@ func (tc *TextCleaner) BuildUI() {
 
 	// Create main horizontal paned (pipeline panel | text panes)
 	mainPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
-	mainPaned.SetPosition(350) // Pipeline panel width
+	mainPaned.SetPosition(450) // Pipeline panel width
 
 	// Create pipeline panel (left side)
 	pipelinePanel := tc.createPipelinePanel()
@@ -278,7 +278,7 @@ func (tc *TextCleaner) BuildUI() {
 
 	// Create horizontal paned for input/output (right side)
 	textPaned, _ := gtk.PanedNew(gtk.ORIENTATION_HORIZONTAL)
-	textPaned.SetPosition((appWidth - 350) / 2)
+	textPaned.SetPosition(375) // Input pane width (half of remaining space after 450px pipeline)
 
 	// Create input pane
 	inputFrame := tc.createTextPane("Input", true)
@@ -460,7 +460,7 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 
 	// Create paned layout for controls and tree
 	paned, _ := gtk.PanedNew(gtk.ORIENTATION_VERTICAL)
-	paned.SetPosition(320) // Controls panel height
+	paned.SetPosition(380) // Controls panel height
 
 	// ===== TOP SECTION: Node Controls =====
 	nodeControls := tc.createNodeControls()
