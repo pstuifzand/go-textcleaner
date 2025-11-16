@@ -490,20 +490,26 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	scrolledWindow.SetSizeRequest(200, -1)
 
-	// Create list store with three columns: display name, operation name, description
-	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
+	// Create list store with four columns: display name, operation name, description, markup
+	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
 
 	// Populate with all operations
 	operations := GetOperations()
 	for _, op := range operations {
 		iter := listStore.Append()
+		// Create two-line markup: name bold, description smaller and gray
+		markup := fmt.Sprintf("<b>%s</b>\n<small><span foreground='#666666'>%s</span></small>",
+			glib.MarkupEscapeText(op.Name),
+			glib.MarkupEscapeText(op.Description))
+
 		listStore.SetValue(iter, 0, op.Name)
 		listStore.SetValue(iter, 1, op.Name)
 		listStore.SetValue(iter, 2, op.Description)
+		listStore.SetValue(iter, 3, markup)
 	}
 
 	// Create filter model
-	filterModel, _ := listStore.ToTreeModel()
+	filterModel := listStore.ToTreeModel()
 	filter, _ := filterModel.FilterNew(nil)
 
 	// Set up filter function
@@ -550,25 +556,10 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	renderer, _ := gtk.CellRendererTextNew()
 	renderer.SetProperty("ellipsize", 3) // PANGO_ELLIPSIZE_END
 
-	// Set cell data function to format with two lines
+	// Create column and add renderer
 	column, _ := gtk.TreeViewColumnNew()
 	column.PackStart(renderer, true)
-	column.SetCellDataFunc(renderer, func(layout *gtk.TreeViewColumn, cell *gtk.CellRenderer, model *gtk.TreeModel, iter *gtk.TreeIter) {
-		// Get name and description
-		nameVal, _ := model.GetValue(iter, 0)
-		name, _ := nameVal.GetString()
-
-		descVal, _ := model.GetValue(iter, 2)
-		desc, _ := descVal.GetString()
-
-		// Create two-line markup: name bold, description smaller and gray
-		markup := fmt.Sprintf("<b>%s</b>\n<small><span foreground='#666666'>%s</span></small>",
-			glib.MarkupEscapeText(name),
-			glib.MarkupEscapeText(desc))
-
-		cellRenderer := cell.(*gtk.CellRendererText)
-		cellRenderer.SetProperty("markup", markup)
-	})
+	column.AddAttribute(renderer, "markup", 3) // Use column 3 for markup
 
 	treeView.AppendColumn(column)
 
