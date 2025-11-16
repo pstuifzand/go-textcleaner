@@ -24,6 +24,7 @@ type ArgSpec struct {
 	Label        string   `json:"label"`         // Display label for the argument
 	BackendType  string   `json:"backend_type"`  // Backend type: "string", "bool", "int", "float"
 	FrontendType string   `json:"frontend_type"` // Frontend widget type: "text", "checkbox", "number", "select"
+	InputType    string   `json:"input_type"`    // Semantic type: "text", "regex", "format", "delimiter", "selector", "url", "email", etc.
 	Options      []string `json:"options"`       // For select widgets: list of valid options
 	DefaultValue string   `json:"default_value"` // Optional default value
 	Placeholder  string   `json:"placeholder"`   // Optional placeholder text for text inputs
@@ -114,8 +115,8 @@ func GetOperations() []Operation {
 			Description: "Replace all occurrences of text (arg1→arg2)",
 			Func:        replaceText,
 			Args: []ArgSpec{
-				{Label: "Find", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
-				{Label: "Replace with", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: false},
+				{Label: "Find", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Replace with", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Replacement text", Required: false},
 			},
 		},
 		{
@@ -123,7 +124,7 @@ func GetOperations() []Operation {
 			Description: "Add text to the beginning",
 			Func:        addPrefix,
 			Args: []ArgSpec{
-				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text to add at start", Required: true},
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to add at start", Required: true},
 			},
 		},
 		{
@@ -131,7 +132,7 @@ func GetOperations() []Operation {
 			Description: "Add text to the end",
 			Func:        addSuffix,
 			Args: []ArgSpec{
-				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text to add at end", Required: true},
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to add at end", Required: true},
 			},
 		},
 		{
@@ -139,7 +140,7 @@ func GetOperations() []Operation {
 			Description: "Remove text from beginning",
 			Func:        removePrefix,
 			Args: []ArgSpec{
-				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text to remove from start", Required: true},
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to remove from start", Required: true},
 			},
 		},
 		{
@@ -147,7 +148,7 @@ func GetOperations() []Operation {
 			Description: "Remove text from end",
 			Func:        removeSuffix,
 			Args: []ArgSpec{
-				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text to remove from end", Required: true},
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to remove from end", Required: true},
 			},
 		},
 		{
@@ -155,8 +156,8 @@ func GetOperations() []Operation {
 			Description: "Wrap text with prefix and suffix",
 			Func:        surroundText,
 			Args: []ArgSpec{
-				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text before", Required: true},
-				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text after", Required: true},
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text before", Required: true},
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text after", Required: true},
 			},
 		},
 
@@ -166,7 +167,7 @@ func GetOperations() []Operation {
 			Description: "Extract N characters from left",
 			Func:        leftCharacters,
 			Args: []ArgSpec{
-				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
 			},
 		},
 		{
@@ -174,7 +175,7 @@ func GetOperations() []Operation {
 			Description: "Extract N characters from right",
 			Func:        rightCharacters,
 			Args: []ArgSpec{
-				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
 			},
 		},
 		{
@@ -182,8 +183,8 @@ func GetOperations() []Operation {
 			Description: "Extract characters from middle",
 			Func:        midCharacters,
 			Args: []ArgSpec{
-				{Label: "Position", BackendType: "int", FrontendType: "number", Placeholder: "Starting position (0-based)", DefaultValue: "0", Required: true},
-				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+				{Label: "Position", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Starting position (0-based)", DefaultValue: "0", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
 			},
 		},
 
@@ -193,8 +194,8 @@ func GetOperations() []Operation {
 			Description: "Split by delimiter and reformat",
 			Func:        splitFormat,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Split by", DefaultValue: ",", Required: true},
-				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Format string with $1, $2, etc.", DefaultValue: "$1", Required: true},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Split by", DefaultValue: ",", Required: true},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Format string with $1, $2, etc.", DefaultValue: "$1", Required: true},
 			},
 		},
 
@@ -237,7 +238,7 @@ func GetOperations() []Operation {
 			Description: "Select elements using CSS selector",
 			Func:        selectHtml,
 			Args: []ArgSpec{
-				{Label: "Selector", BackendType: "string", FrontendType: "text", Placeholder: "CSS selector (e.g., div.class)", Required: true},
+				{Label: "Selector", BackendType: "string", FrontendType: "text", InputType: "selector", Placeholder: "CSS selector (e.g., div.class)", Required: true},
 			},
 		},
 
@@ -247,7 +248,7 @@ func GetOperations() []Operation {
 			Description: "Extract JSON data using path notation",
 			Func:        selectJson,
 			Args: []ArgSpec{
-				{Label: "Path", BackendType: "string", FrontendType: "text", Placeholder: "JSON path (e.g., .users[0].name)", Required: true},
+				{Label: "Path", BackendType: "string", FrontendType: "text", InputType: "selector", Placeholder: "JSON path (e.g., .users[0].name)", Required: true},
 			},
 		},
 
@@ -257,7 +258,7 @@ func GetOperations() []Operation {
 			Description: "Keep only lines matching regex",
 			Func:        keepMatchLines,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 		{
@@ -265,7 +266,7 @@ func GetOperations() []Operation {
 			Description: "Remove lines matching regex",
 			Func:        removeMatchLines,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 		{
@@ -273,7 +274,7 @@ func GetOperations() []Operation {
 			Description: "Find all regex matches",
 			Func:        matchText,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 		{
@@ -281,8 +282,8 @@ func GetOperations() []Operation {
 			Description: "Regex find and replace",
 			Func:        replaceFull,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
-				{Label: "Replacement", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: false},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
+				{Label: "Replacement", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Replacement text", Required: false},
 			},
 		},
 
@@ -300,7 +301,7 @@ func GetOperations() []Operation {
 			Description: "Sort lines alphabetically",
 			Func:        sortLines,
 			Args: []ArgSpec{
-				{Label: "Options", BackendType: "string", FrontendType: "text", Placeholder: "Options: n (numeric), r (reverse), i (ignore case)", DefaultValue: "", Required: false},
+				{Label: "Options", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Options: n (numeric), r (reverse), i (ignore case)", DefaultValue: "", Required: false},
 			},
 		},
 		{
@@ -308,8 +309,8 @@ func GetOperations() []Operation {
 			Description: "Add line numbers",
 			Func:        numberLines,
 			Args: []ArgSpec{
-				{Label: "Start", BackendType: "int", FrontendType: "number", Placeholder: "Starting number", DefaultValue: "1", Required: false},
-				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Format (e.g., '%d. ')", DefaultValue: "%d. ", Required: false},
+				{Label: "Start", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Starting number", DefaultValue: "1", Required: false},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Format (e.g., '%d. ')", DefaultValue: "%d. ", Required: false},
 			},
 		},
 		{
@@ -341,8 +342,8 @@ func GetOperations() []Operation {
 			Description: "Keep lines within length range",
 			Func:        filterLinesByLength,
 			Args: []ArgSpec{
-				{Label: "Minimum", BackendType: "int", FrontendType: "number", Placeholder: "Min length", DefaultValue: "0", Required: false},
-				{Label: "Maximum", BackendType: "int", FrontendType: "number", Placeholder: "Max length (0=unlimited)", DefaultValue: "0", Required: false},
+				{Label: "Minimum", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Min length", DefaultValue: "0", Required: false},
+				{Label: "Maximum", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Max length (0=unlimited)", DefaultValue: "0", Required: false},
 			},
 		},
 
@@ -352,7 +353,7 @@ func GetOperations() []Operation {
 			Description: "Wrap text at column width",
 			Func:        wrapText,
 			Args: []ArgSpec{
-				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
+				{Label: "Width", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
 			},
 		},
 		{
@@ -360,7 +361,7 @@ func GetOperations() []Operation {
 			Description: "Unwrap and rewrap at width",
 			Func:        rewrapText,
 			Args: []ArgSpec{
-				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
+				{Label: "Width", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
 			},
 		},
 		{
@@ -374,7 +375,7 @@ func GetOperations() []Operation {
 			Description: "Add prefix to each line",
 			Func:        quoteText,
 			Args: []ArgSpec{
-				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Line prefix", DefaultValue: "> ", Required: false},
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Line prefix", DefaultValue: "> ", Required: false},
 			},
 		},
 		{
@@ -382,7 +383,7 @@ func GetOperations() []Operation {
 			Description: "Add indentation to each line",
 			Func:        indentText,
 			Args: []ArgSpec{
-				{Label: "Indent", BackendType: "string", FrontendType: "text", Placeholder: "Indentation text", DefaultValue: "  ", Required: true},
+				{Label: "Indent", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Indentation text", DefaultValue: "  ", Required: true},
 			},
 		},
 		{
@@ -396,7 +397,7 @@ func GetOperations() []Operation {
 			Description: "Center each line within width",
 			Func:        centerText,
 			Args: []ArgSpec{
-				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Total width", DefaultValue: "80", Required: true},
+				{Label: "Width", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Total width", DefaultValue: "80", Required: true},
 			},
 		},
 
@@ -516,7 +517,7 @@ func GetOperations() []Operation {
 			Description: "Insert current date/time",
 			Func:        insertDateTime,
 			Args: []ArgSpec{
-				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Go time format", DefaultValue: "2006-01-02 15:04:05", Required: false},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Go time format", DefaultValue: "2006-01-02 15:04:05", Required: false},
 			},
 		},
 
@@ -561,8 +562,8 @@ func GetOperations() []Operation {
 			Description: "Extract regex matches with groups",
 			Func:        extractWithGroups,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression with groups", Required: true},
-				{Label: "Template", BackendType: "string", FrontendType: "text", Placeholder: "Template ($1, $2, etc.)", DefaultValue: "$0", Required: false},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression with groups", Required: true},
+				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Template ($1, $2, etc.)", DefaultValue: "$0", Required: false},
 			},
 		},
 		{
@@ -570,8 +571,8 @@ func GetOperations() []Operation {
 			Description: "Replace using regex groups",
 			Func:        replaceWithGroups,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression with groups", Required: true},
-				{Label: "Template", BackendType: "string", FrontendType: "text", Placeholder: "Template ($1, $2, etc.)", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression with groups", Required: true},
+				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Template ($1, $2, etc.)", Required: true},
 			},
 		},
 		{
@@ -579,8 +580,8 @@ func GetOperations() []Operation {
 			Description: "Split text by regex pattern",
 			Func:        splitByRegex,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Join delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Join delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
@@ -588,7 +589,7 @@ func GetOperations() []Operation {
 			Description: "Count number of regex matches",
 			Func:        matchCount,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 
@@ -598,8 +599,8 @@ func GetOperations() []Operation {
 			Description: "Format numbers with decimals",
 			Func:        formatNumbersOperation,
 			Args: []ArgSpec{
-				{Label: "Decimals", BackendType: "int", FrontendType: "number", Placeholder: "Number of decimals", DefaultValue: "2", Required: false},
-				{Label: "Separator", BackendType: "string", FrontendType: "text", Placeholder: "Thousands separator", DefaultValue: ",", Required: false},
+				{Label: "Decimals", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Number of decimals", DefaultValue: "2", Required: false},
+				{Label: "Separator", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Thousands separator", DefaultValue: ",", Required: false},
 			},
 		},
 		{
@@ -607,7 +608,7 @@ func GetOperations() []Operation {
 			Description: "Round all numbers to decimals",
 			Func:        roundNumbers,
 			Args: []ArgSpec{
-				{Label: "Decimals", BackendType: "int", FrontendType: "number", Placeholder: "Number of decimals", DefaultValue: "0", Required: false},
+				{Label: "Decimals", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Number of decimals", DefaultValue: "0", Required: false},
 			},
 		},
 		{
@@ -623,7 +624,7 @@ func GetOperations() []Operation {
 			Description: "Join lines with delimiter",
 			Func:        joinList,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Join with", DefaultValue: ", ", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Join with", DefaultValue: ", ", Required: false},
 			},
 		},
 		{
@@ -637,7 +638,7 @@ func GetOperations() []Operation {
 			Description: "Count occurrences of string",
 			Func:        countOccurrences,
 			Args: []ArgSpec{
-				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to count", Required: true},
+				{Label: "Search", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to count", Required: true},
 			},
 		},
 		{
@@ -645,8 +646,8 @@ func GetOperations() []Operation {
 			Description: "Keep lines with text",
 			Func:        keepLinesContaining,
 			Args: []ArgSpec{
-				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
-				{Label: "Flags", BackendType: "string", FrontendType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
+				{Label: "Search", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Flags", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
 			},
 		},
 		{
@@ -654,8 +655,8 @@ func GetOperations() []Operation {
 			Description: "Remove lines with text",
 			Func:        removeLinesContaining,
 			Args: []ArgSpec{
-				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
-				{Label: "Flags", BackendType: "string", FrontendType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
+				{Label: "Search", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Flags", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
 			},
 		},
 		{
@@ -663,8 +664,8 @@ func GetOperations() []Operation {
 			Description: "Truncate to max length",
 			Func:        truncateText,
 			Args: []ArgSpec{
-				{Label: "Length", BackendType: "int", FrontendType: "number", Placeholder: "Maximum length", Required: true},
-				{Label: "Ellipsis", BackendType: "string", FrontendType: "text", Placeholder: "Ellipsis text", DefaultValue: "...", Required: false},
+				{Label: "Length", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Maximum length", Required: true},
+				{Label: "Ellipsis", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Ellipsis text", DefaultValue: "...", Required: false},
 			},
 		},
 
@@ -680,7 +681,7 @@ func GetOperations() []Operation {
 			Description: "Returns 'true' if matches pattern",
 			Func:        hasPattern,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 		{
@@ -688,7 +689,7 @@ func GetOperations() []Operation {
 			Description: "Returns 'true' if starts with text",
 			Func:        startsWith,
 			Args: []ArgSpec{
-				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Starting text", Required: true},
+				{Label: "Text", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Starting text", Required: true},
 			},
 		},
 
@@ -698,7 +699,7 @@ func GetOperations() []Operation {
 			Description: "Remove duplicates",
 			Func:        uniqueValues,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
@@ -706,7 +707,7 @@ func GetOperations() []Operation {
 			Description: "Find most frequent item",
 			Func:        mostCommon,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
@@ -714,7 +715,7 @@ func GetOperations() []Operation {
 			Description: "Find least frequent item",
 			Func:        leastCommon,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
@@ -728,7 +729,7 @@ func GetOperations() []Operation {
 			Description: "Group lines by regex match",
 			Func:        groupByPattern,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 
@@ -744,7 +745,7 @@ func GetOperations() []Operation {
 			Description: "Count occurrences of character",
 			Func:        characterCount,
 			Args: []ArgSpec{
-				{Label: "Character", BackendType: "string", FrontendType: "text", Placeholder: "Character to count", Required: true},
+				{Label: "Character", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Character to count", Required: true},
 			},
 		},
 		{
@@ -784,7 +785,7 @@ func GetOperations() []Operation {
 			Description: "Find whole word matches only",
 			Func:        wholeWordMatch,
 			Args: []ArgSpec{
-				{Label: "Word", BackendType: "string", FrontendType: "text", Placeholder: "Word to match", Required: true},
+				{Label: "Word", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Word to match", Required: true},
 			},
 		},
 		{
@@ -792,7 +793,7 @@ func GetOperations() []Operation {
 			Description: "Count case-sensitive matches",
 			Func:        caseSensitiveFind,
 			Args: []ArgSpec{
-				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Search", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to find", Required: true},
 			},
 		},
 		{
@@ -800,7 +801,7 @@ func GetOperations() []Operation {
 			Description: "Apply multiline regex",
 			Func:        multilinePattern,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
 			},
 		},
 		{
@@ -808,8 +809,8 @@ func GetOperations() []Operation {
 			Description: "Match text followed by pattern",
 			Func:        lookaheadPattern,
 			Args: []ArgSpec{
-				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Text to match", Required: true},
-				{Label: "Followed by", BackendType: "string", FrontendType: "text", Placeholder: "Pattern that follows", Required: true},
+				{Label: "Text", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to match", Required: true},
+				{Label: "Followed by", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Pattern that follows", Required: true},
 			},
 		},
 		{
@@ -817,8 +818,8 @@ func GetOperations() []Operation {
 			Description: "Match text preceded by pattern",
 			Func:        lookbehindPattern,
 			Args: []ArgSpec{
-				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Text to match", Required: true},
-				{Label: "Preceded by", BackendType: "string", FrontendType: "text", Placeholder: "Pattern before", Required: true},
+				{Label: "Text", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Text to match", Required: true},
+				{Label: "Preceded by", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Pattern before", Required: true},
 			},
 		},
 		{
@@ -826,8 +827,8 @@ func GetOperations() []Operation {
 			Description: "Replace based on conditions",
 			Func:        conditionalReplace,
 			Args: []ArgSpec{
-				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
-				{Label: "Replacement", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: true},
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression", Required: true},
+				{Label: "Replacement", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Replacement text", Required: true},
 			},
 		},
 
@@ -837,7 +838,7 @@ func GetOperations() []Operation {
 			Description: "Chain multiple operations",
 			Func:        chainOperations,
 			Args: []ArgSpec{
-				{Label: "Operations", BackendType: "string", FrontendType: "text", Placeholder: "op1|op2|op3", Required: true},
+				{Label: "Operations", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "op1|op2|op3", Required: true},
 			},
 		},
 		{
@@ -845,8 +846,8 @@ func GetOperations() []Operation {
 			Description: "Repeat operation N times",
 			Func:        repeatOperation,
 			Args: []ArgSpec{
-				{Label: "Operation", BackendType: "string", FrontendType: "text", Placeholder: "Operation name", Required: true},
-				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Repeat count", DefaultValue: "1", Required: true},
+				{Label: "Operation", BackendType: "string", FrontendType: "text", InputType: "text", Placeholder: "Operation name", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Repeat count", DefaultValue: "1", Required: true},
 			},
 		},
 		{
@@ -854,7 +855,7 @@ func GetOperations() []Operation {
 			Description: "Swap pairs of items",
 			Func:        swapPairs,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
@@ -862,7 +863,7 @@ func GetOperations() []Operation {
 			Description: "Reverse order of items",
 			Func:        reverseOrderItems,
 			Args: []ArgSpec{
-				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
 			},
 		},
 
@@ -890,8 +891,8 @@ func GetOperations() []Operation {
 			Description: "Create table from delimited data",
 			Func:        createMarkdownTable,
 			Args: []ArgSpec{
-				{Label: "Column Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Column separator", DefaultValue: ",", Required: false},
-				{Label: "Row Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Row separator", DefaultValue: "\n", Required: false},
+				{Label: "Column Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Column separator", DefaultValue: ",", Required: false},
+				{Label: "Row Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Row separator", DefaultValue: "\n", Required: false},
 			},
 		},
 		{
