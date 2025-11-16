@@ -37,6 +37,7 @@ type TextCleaner struct {
 	pipelineTree     *gtk.TreeView
 	treeStore        *gtk.TreeStore
 	paletteTree      *gtk.TreeView // Operations palette tree
+	paletteStore     *gtk.ListStore // Keep reference to prevent GC of palette list store
 	selectedNode     *gtk.TreePath
 	nodeTypeCombo    *gtk.ComboBoxText
 	operationCombo   *gtk.ComboBoxText
@@ -202,7 +203,6 @@ func runREPLMode(socketPath string) {
 
 // loadStateFromSocket loads the current state from a socket server via an existing client
 func loadStateFromSocket(core *TextCleanerCore, client *SocketClient) error {
-
 	// Load the current pipeline
 	pipelineResp, err := client.Execute(`{"action":"export_pipeline","params":{}}`)
 	if err != nil {
@@ -492,6 +492,7 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 
 	// Create list store with four columns: display name, operation name, description, markup
 	listStore, _ := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
+	tc.paletteStore = listStore // Keep reference to prevent garbage collection
 
 	// Populate with all operations
 	operations := GetOperations()
@@ -502,15 +503,14 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 			glib.MarkupEscapeText(op.Name),
 			glib.MarkupEscapeText(op.Description))
 
-		listStore.SetValue(iter, 0, op.Name)
+		// Store markup directly in the model: name bold, description smaller and gray
+		listStore.SetValue(iter, 0, markup)
 		listStore.SetValue(iter, 1, op.Name)
 		listStore.SetValue(iter, 2, op.Description)
-		listStore.SetValue(iter, 3, markup)
 	}
 
-	// Create filter model
-	filterModel := listStore.ToTreeModel()
-	filter, _ := filterModel.FilterNew(nil)
+	// Create filter model from the ListStore (child model is automatically set)
+	filter, _ := listStore.ToTreeModel().FilterNew(nil)
 
 	// Set up filter function
 	filter.SetVisibleFunc(func(model *gtk.TreeModel, iter *gtk.TreeIter) bool {
@@ -522,8 +522,8 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 			return true
 		}
 
-		// Get operation name and description
-		nameVal, _ := model.GetValue(iter, 0)
+		// Get operation name and description from columns 1 and 2
+		nameVal, _ := model.GetValue(iter, 1)
 		name, _ := nameVal.GetString()
 
 		descVal, _ := model.GetValue(iter, 2)
@@ -552,14 +552,16 @@ func (tc *TextCleaner) createOperationsPalette() *gtk.Box {
 	tc.paletteTree = treeView
 	treeView.SetModel(filter)
 
-	// Create custom cell renderer for two-line display
+	// Create custom cell renderer for two-line display with markup
 	renderer, _ := gtk.CellRendererTextNew()
 	renderer.SetProperty("ellipsize", 3) // PANGO_ELLIPSIZE_END
+	renderer.SetProperty("wrap-width", 300)
+	renderer.SetProperty("wrap-mode", 0) // PANGO_WRAP_WORD
 
-	// Create column and add renderer
 	column, _ := gtk.TreeViewColumnNew()
 	column.PackStart(renderer, true)
-	column.AddAttribute(renderer, "markup", 3) // Use column 3 for markup
+	// Use AddAttribute to bind the 0th column (which contains markup) to the "markup" property
+	column.AddAttribute(renderer, "markup", 0)
 
 	treeView.AppendColumn(column)
 
@@ -623,8 +625,21 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	scrolledWindow.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	scrolledWindow.SetSizeRequest(300, -1)
 
-	// Create tree store with two columns: display text and node ID
-	treeStore, _ := gtk.TreeStoreNew(glib.TYPE_STRING, glib.TYPE_STRING)
+	// Create tree store with six columns:
+	// 0: Display text (Type/Operation name)
+	// 1: Node ID
+	// 2: Arg1 value
+	// 3: Arg2 value
+	// 4: Condition value
+	// 5: Node type (for conditional visibility)
+	treeStore, _ := gtk.TreeStoreNew(
+		glib.TYPE_STRING, // 0: Display text
+		glib.TYPE_STRING, // 1: Node ID
+		glib.TYPE_STRING, // 2: Arg1
+		glib.TYPE_STRING, // 3: Arg2
+		glib.TYPE_STRING, // 4: Condition
+		glib.TYPE_STRING, // 5: Node type
+	)
 	tc.treeStore = treeStore
 
 	// Create tree view
@@ -632,13 +647,50 @@ func (tc *TextCleaner) createPipelinePanel() *gtk.Box {
 	tc.pipelineTree = treeView
 	treeView.SetModel(treeStore)
 
-	// Add column for display text (column 0)
-	renderer, _ := gtk.CellRendererTextNew()
-	column, _ := gtk.TreeViewColumnNewWithAttribute("Node", renderer, "text", 0)
-	treeView.AppendColumn(column)
+	// Column 1: Operation/Type (non-editable)
+	renderer1, _ := gtk.CellRendererTextNew()
+	column1, _ := gtk.TreeViewColumnNewWithAttribute("Operation", renderer1, "text", 0)
+	column1.SetResizable(true)
+	column1.SetMinWidth(150)
+	treeView.AppendColumn(column1)
+
+	// Column 2: Arg1 (editable)
+	renderer2, _ := gtk.CellRendererTextNew()
+	renderer2.SetProperty("editable", true)
+	column2, _ := gtk.TreeViewColumnNewWithAttribute("Arg1", renderer2, "text", 2)
+	column2.SetResizable(true)
+	column2.SetMinWidth(100)
+	treeView.AppendColumn(column2)
+
+	// Column 3: Arg2 (editable)
+	renderer3, _ := gtk.CellRendererTextNew()
+	renderer3.SetProperty("editable", true)
+	column3, _ := gtk.TreeViewColumnNewWithAttribute("Arg2", renderer3, "text", 3)
+	column3.SetResizable(true)
+	column3.SetMinWidth(100)
+	treeView.AppendColumn(column3)
+
+	// Column 4: Condition (editable)
+	renderer4, _ := gtk.CellRendererTextNew()
+	renderer4.SetProperty("editable", true)
+	column4, _ := gtk.TreeViewColumnNewWithAttribute("Condition", renderer4, "text", 4)
+	column4.SetResizable(true)
+	column4.SetMinWidth(100)
+	treeView.AppendColumn(column4)
 
 	// Set properties
-	treeView.SetHeadersVisible(false)
+	treeView.SetHeadersVisible(true)
+
+	// Connect cell edited signals for inline editing
+	renderer2.Connect("edited", func(cell *gtk.CellRendererText, path string, newText string) {
+		tc.onCellEdited(path, 2, newText) // Column 2 = Arg1
+	})
+	renderer3.Connect("edited", func(cell *gtk.CellRendererText, path string, newText string) {
+		tc.onCellEdited(path, 3, newText) // Column 3 = Arg2
+	})
+	renderer4.Connect("edited", func(cell *gtk.CellRendererText, path string, newText string) {
+		tc.onCellEdited(path, 4, newText) // Column 4 = Condition
+	})
 
 	// Enable drag destination for the pipeline tree
 	targetEntry, _ := gtk.TargetEntryNew("text/plain", gtk.TARGET_SAME_APP, 0)
@@ -1073,8 +1125,8 @@ func (tc *TextCleaner) updateNodeTypeUI() {
 		tc.conditionEntry.ShowAll()
 	case "ForEachLine":
 		tc.operationCombo.Hide()
-		tc.argument1.Hide()
-		tc.argument2.Hide()
+		tc.argument1.ShowAll()
+		tc.argument2.ShowAll()
 		tc.conditionEntry.Hide()
 	case "Group":
 		tc.operationCombo.Hide()
@@ -1268,6 +1320,9 @@ func (tc *TextCleaner) updateSelectedNode() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	selectedID := tc.commands.GetSelectedNodeID()
@@ -1281,7 +1336,6 @@ func (tc *TextCleaner) updateSelectedNode() {
 		arg2,
 		condition,
 	)
-
 	if err != nil {
 		return
 	}
@@ -1318,6 +1372,9 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	// Update node via commands interface (works with both local core and socket wrapper)
@@ -1329,7 +1386,6 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 		arg2,
 		condition,
 	)
-
 	if err != nil {
 		return
 	}
@@ -1341,6 +1397,63 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 	if node != nil {
 		tc.updateSingleNodeDisplay(selectedID)
 	}
+	tc.updateTextDisplay()
+}
+
+// onCellEdited handles inline cell editing in the tree view
+func (tc *TextCleaner) onCellEdited(pathStr string, column int, newText string) {
+	// Get the tree path and iter
+	treePath, err := gtk.TreePathNewFromString(pathStr)
+	if err != nil {
+		return
+	}
+
+	iter, err := tc.treeStore.GetIter(treePath)
+	if err != nil {
+		return
+	}
+
+	// Get the node ID from column 1
+	val, _ := tc.treeStore.GetValue(iter, 1)
+	nodeID, _ := val.GetString()
+
+	// Get the current node
+	node := tc.commands.GetNode(nodeID)
+	if node == nil {
+		return
+	}
+
+	// Update the appropriate field based on which column was edited
+	arg1 := node.Arg1
+	arg2 := node.Arg2
+	condition := node.Condition
+
+	switch column {
+	case 2: // Arg1
+		arg1 = newText
+	case 3: // Arg2
+		arg2 = newText
+	case 4: // Condition
+		condition = newText
+	}
+
+	// Update the node
+	err = tc.commands.UpdateNode(
+		nodeID,
+		node.Name,
+		node.Operation,
+		arg1,
+		arg2,
+		condition,
+	)
+	if err != nil {
+		return
+	}
+
+	// Update the tree store cell value
+	tc.treeStore.SetValue(iter, column, newText)
+
+	// Update the output display
 	tc.updateTextDisplay()
 }
 
@@ -1382,6 +1495,9 @@ func (tc *TextCleaner) addChildNode() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	coreNodeType := tc.getNodeTypeFromUI(nodeType)
@@ -1397,7 +1513,6 @@ func (tc *TextCleaner) addChildNode() {
 		arg2,
 		condition,
 	)
-
 	if err != nil {
 		return
 	}
@@ -1536,13 +1651,17 @@ func (tc *TextCleaner) updateNodeDisplayInTree(parentIter *gtk.TreeIter, nodeID 
 		currentNodeID, _ := val.GetString()
 
 		if currentNodeID == nodeID {
-			// Found the node - update its display
+			// Found the node - update all columns
 			displayText := tc.getNodeDisplayText(node)
 			// Only add emoji if in editing mode
 			if tc.editingMode && nodeID == tc.commands.GetSelectedNodeID() {
 				displayText = "✏️ " + displayText
 			}
 			tc.treeStore.SetValue(&iter, 0, displayText)
+			tc.treeStore.SetValue(&iter, 2, node.Arg1)
+			tc.treeStore.SetValue(&iter, 3, node.Arg2)
+			tc.treeStore.SetValue(&iter, 4, node.Condition)
+			tc.treeStore.SetValue(&iter, 5, node.Type)
 			return true
 		}
 
@@ -1579,12 +1698,16 @@ func (tc *TextCleaner) updateNodeDisplayWithIndicator(parentIter *gtk.TreeIter, 
 		nodeID, _ := val.GetString()
 
 		if nodeID == selectedID {
-			// Found the selected node - update its display with indicator
+			// Found the selected node - update its display with indicator and all columns
 			foundNode := tc.commands.GetNode(nodeID)
 			if foundNode != nil {
 				displayText := tc.getNodeDisplayText(foundNode)
 				displayText = "✏️ " + displayText // Add pencil emoji indicator
 				tc.treeStore.SetValue(&iter, 0, displayText)
+				tc.treeStore.SetValue(&iter, 2, foundNode.Arg1)
+				tc.treeStore.SetValue(&iter, 3, foundNode.Arg2)
+				tc.treeStore.SetValue(&iter, 4, foundNode.Condition)
+				tc.treeStore.SetValue(&iter, 5, foundNode.Type)
 			}
 			return true
 		}
@@ -1653,9 +1776,19 @@ func (tc *TextCleaner) addNodeToTree(node *PipelineNode, parentIter *gtk.TreeIte
 		iter = tc.treeStore.Append(parentIter)
 	}
 
-	// Store both display text (column 0) and node ID (column 1)
+	// Populate all 6 columns:
+	// 0: Display text (Type/Operation name)
+	// 1: Node ID
+	// 2: Arg1 value
+	// 3: Arg2 value
+	// 4: Condition value
+	// 5: Node type
 	tc.treeStore.SetValue(iter, 0, displayText)
 	tc.treeStore.SetValue(iter, 1, node.ID)
+	tc.treeStore.SetValue(iter, 2, node.Arg1)
+	tc.treeStore.SetValue(iter, 3, node.Arg2)
+	tc.treeStore.SetValue(iter, 4, node.Condition)
+	tc.treeStore.SetValue(iter, 5, node.Type)
 
 	// Add children
 	for _, child := range node.Children {
@@ -1669,13 +1802,6 @@ func (tc *TextCleaner) getNodeDisplayText(node *PipelineNode) string {
 	switch node.Type {
 	case "operation":
 		text = fmt.Sprintf("[OP] %s", node.Name)
-		if node.Arg1 != "" {
-			text += fmt.Sprintf(" (%s", node.Arg1)
-			if node.Arg2 != "" {
-				text += fmt.Sprintf(", %s", node.Arg2)
-			}
-			text += ")"
-		}
 	case "if":
 		text = fmt.Sprintf("[IF] %s", node.Name)
 	case "foreach":
