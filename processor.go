@@ -19,193 +19,934 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+// ArgSpec represents the specification for an operation argument
+type ArgSpec struct {
+	Label        string   `json:"label"`         // Display label for the argument
+	BackendType  string   `json:"backend_type"`  // Backend type: "string", "bool", "int", "float"
+	FrontendType string   `json:"frontend_type"` // Frontend widget type: "text", "checkbox", "number", "select"
+	Options      []string `json:"options"`       // For select widgets: list of valid options
+	DefaultValue string   `json:"default_value"` // Optional default value
+	Placeholder  string   `json:"placeholder"`   // Optional placeholder text for text inputs
+	Required     bool     `json:"required"`      // Whether this argument is required
+}
+
 // Operation represents a text transformation operation
 type Operation struct {
 	Name        string
 	Description string
 	Func        func(input, arg1, arg2 string) string
+	Args        []ArgSpec // Argument specifications
 }
 
 // PipelineNode represents a node in the tree-based operation pipeline
 type PipelineNode struct {
-	ID           string          `json:"id"`             // Unique identifier
-	Type         string          `json:"type"`           // "operation", "if", "foreach", "group"
-	Name         string          `json:"name"`           // Display name
-	Operation    string          `json:"operation"`      // Operation name (for type="operation")
-	Arg1         string          `json:"arg1"`           // First argument
-	Arg2         string          `json:"arg2"`           // Second argument
-	Condition    string          `json:"condition"`      // For if nodes: regex/pattern to test
-	Children     []PipelineNode  `json:"children"`       // Child nodes
-	ElseChildren []PipelineNode  `json:"else_children"`  // For if nodes: else branch
+	ID           string         `json:"id"`            // Unique identifier
+	Type         string         `json:"type"`          // "operation", "if", "foreach", "group"
+	Name         string         `json:"name"`          // Display name
+	Operation    string         `json:"operation"`     // Operation name (for type="operation")
+	Arg1         string         `json:"arg1"`          // First argument
+	Arg2         string         `json:"arg2"`          // Second argument
+	Condition    string         `json:"condition"`     // For if nodes: regex/pattern to test
+	Children     []PipelineNode `json:"children"`      // Child nodes
+	ElseChildren []PipelineNode `json:"else_children"` // For if nodes: else branch
 }
 
 // GetOperations returns all available text operations
 func GetOperations() []Operation {
 	return []Operation{
 		// Identity (no-op) operation
-		{"Identity", "Returns input unchanged (no-op)", identity},
+		{
+			Name:        "Identity",
+			Description: "Returns input unchanged (no-op)",
+			Func:        identity,
+			Args:        []ArgSpec{},
+		},
 
 		// Basic case operations
-		{"Uppercase", "Convert all text to uppercase", uppercase},
-		{"Lowercase", "Convert all text to lowercase", lowercase},
-		{"Titlecase", "Convert text to title case", titlecase},
+		{
+			Name:        "Uppercase",
+			Description: "Convert all text to uppercase",
+			Func:        uppercase,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Lowercase",
+			Description: "Convert all text to lowercase",
+			Func:        lowercase,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Titlecase",
+			Description: "Convert text to title case",
+			Func:        titlecase,
+			Args:        []ArgSpec{},
+		},
 
 		// Whitespace operations
-		{"Trim", "Remove leading and trailing whitespace", trim},
-		{"Trim Left", "Remove leading whitespace only", trimLeft},
-		{"Trim Right", "Remove trailing whitespace only", trimRight},
-		{"Normalize Whitespace", "Collapse multiple spaces to single space", normalizeWhitespace},
+		{
+			Name:        "Trim",
+			Description: "Remove leading and trailing whitespace",
+			Func:        trim,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Trim Left",
+			Description: "Remove leading whitespace only",
+			Func:        trimLeft,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Trim Right",
+			Description: "Remove trailing whitespace only",
+			Func:        trimRight,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Normalize Whitespace",
+			Description: "Collapse multiple spaces to single space",
+			Func:        normalizeWhitespace,
+			Args:        []ArgSpec{},
+		},
 
 		// Basic string operations
-		{"Replace Text", "Replace all occurrences of text (arg1→arg2)", replaceText},
-		{"Add Prefix", "Add text to the beginning (arg1)", addPrefix},
-		{"Add Suffix", "Add text to the end (arg1)", addSuffix},
-		{"Remove Prefix", "Remove text from beginning (arg1)", removePrefix},
-		{"Remove Suffix", "Remove text from end (arg1)", removeSuffix},
-		{"Surround Text", "Wrap text with prefix and suffix (arg1, arg2)", surroundText},
+		{
+			Name:        "Replace Text",
+			Description: "Replace all occurrences of text (arg1→arg2)",
+			Func:        replaceText,
+			Args: []ArgSpec{
+				{Label: "Find", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Replace with", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: false},
+			},
+		},
+		{
+			Name:        "Add Prefix",
+			Description: "Add text to the beginning",
+			Func:        addPrefix,
+			Args: []ArgSpec{
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text to add at start", Required: true},
+			},
+		},
+		{
+			Name:        "Add Suffix",
+			Description: "Add text to the end",
+			Func:        addSuffix,
+			Args: []ArgSpec{
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text to add at end", Required: true},
+			},
+		},
+		{
+			Name:        "Remove Prefix",
+			Description: "Remove text from beginning",
+			Func:        removePrefix,
+			Args: []ArgSpec{
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text to remove from start", Required: true},
+			},
+		},
+		{
+			Name:        "Remove Suffix",
+			Description: "Remove text from end",
+			Func:        removeSuffix,
+			Args: []ArgSpec{
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text to remove from end", Required: true},
+			},
+		},
+		{
+			Name:        "Surround Text",
+			Description: "Wrap text with prefix and suffix",
+			Func:        surroundText,
+			Args: []ArgSpec{
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Text before", Required: true},
+				{Label: "Suffix", BackendType: "string", FrontendType: "text", Placeholder: "Text after", Required: true},
+			},
+		},
 
 		// Character extraction
-		{"Left Characters", "Extract N characters from left (arg1=count)", leftCharacters},
-		{"Right Characters", "Extract N characters from right (arg1=count)", rightCharacters},
-		{"Mid Characters", "Extract characters from middle (arg1=pos, arg2=count)", midCharacters},
+		{
+			Name:        "Left Characters",
+			Description: "Extract N characters from left",
+			Func:        leftCharacters,
+			Args: []ArgSpec{
+				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+			},
+		},
+		{
+			Name:        "Right Characters",
+			Description: "Extract N characters from right",
+			Func:        rightCharacters,
+			Args: []ArgSpec{
+				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+			},
+		},
+		{
+			Name:        "Mid Characters",
+			Description: "Extract characters from middle",
+			Func:        midCharacters,
+			Args: []ArgSpec{
+				{Label: "Position", BackendType: "int", FrontendType: "number", Placeholder: "Starting position (0-based)", DefaultValue: "0", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Number of characters", DefaultValue: "10", Required: true},
+			},
+		},
 
 		// Text manipulation
-		{"Split Format", "Split by delimiter and reformat (arg1=delim, arg2=format)", splitFormat},
+		{
+			Name:        "Split Format",
+			Description: "Split by delimiter and reformat",
+			Func:        splitFormat,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Split by", DefaultValue: ",", Required: true},
+				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Format string with $1, $2, etc.", DefaultValue: "$1", Required: true},
+			},
+		},
 
 		// HTML operations
-		{"HTML Decode", "Decode HTML entities to text", htmlDecode},
-		{"HTML Encode", "Encode text to HTML entities", htmlEncode},
-		{"Strip Tags", "Remove all HTML/XML tags", stripTags},
-		{"Find HTML Links", "Extract links from HTML (arg1=format)", findHtmlLinks},
-		{"Select HTML", "Select elements using CSS selector (arg1=selector)", selectHtml},
+		{
+			Name:        "HTML Decode",
+			Description: "Decode HTML entities to text",
+			Func:        htmlDecode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "HTML Encode",
+			Description: "Encode text to HTML entities",
+			Func:        htmlEncode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Strip Tags",
+			Description: "Remove all HTML/XML tags",
+			Func:        stripTags,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Find HTML Links",
+			Description: "Extract links from HTML",
+			Func:        findHtmlLinks,
+			Args: []ArgSpec{
+				{
+					Label:        "Format",
+					BackendType:  "string",
+					FrontendType: "select",
+					Options:      []string{"url", "text", "both"},
+					DefaultValue: "url",
+					Required:     false,
+				},
+			},
+		},
+		{
+			Name:        "Select HTML",
+			Description: "Select elements using CSS selector",
+			Func:        selectHtml,
+			Args: []ArgSpec{
+				{Label: "Selector", BackendType: "string", FrontendType: "text", Placeholder: "CSS selector (e.g., div.class)", Required: true},
+			},
+		},
 
 		// JSON operations
-		{"Select JSON", "Extract JSON data using path notation (arg1=path)", selectJson},
+		{
+			Name:        "Select JSON",
+			Description: "Extract JSON data using path notation",
+			Func:        selectJson,
+			Args: []ArgSpec{
+				{Label: "Path", BackendType: "string", FrontendType: "text", Placeholder: "JSON path (e.g., .users[0].name)", Required: true},
+			},
+		},
 
 		// Regex operations
-		{"Keep Match Lines", "Keep only lines matching regex (arg1=pattern)", keepMatchLines},
-		{"Remove Match Lines", "Remove lines matching regex (arg1=pattern)", removeMatchLines},
-		{"Match Text", "Find all regex matches (arg1=pattern)", matchText},
-		{"Replace Full", "Regex find and replace (arg1=pattern, arg2=replacement)", replaceFull},
+		{
+			Name:        "Keep Match Lines",
+			Description: "Keep only lines matching regex",
+			Func:        keepMatchLines,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
+		{
+			Name:        "Remove Match Lines",
+			Description: "Remove lines matching regex",
+			Func:        removeMatchLines,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
+		{
+			Name:        "Match Text",
+			Description: "Find all regex matches",
+			Func:        matchText,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
+		{
+			Name:        "Replace Full",
+			Description: "Regex find and replace",
+			Func:        replaceFull,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Replacement", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: false},
+			},
+		},
 
 		// Math operations
-		{"Calculate", "Evaluate mathematical expressions in text", calculate},
+		{
+			Name:        "Calculate",
+			Description: "Evaluate mathematical expressions in text",
+			Func:        calculate,
+			Args:        []ArgSpec{},
+		},
 
 		// Phase 1: Line Operations
-		{"Sort Lines", "Sort lines alphabetically (arg1=options: n,r,i)", sortLines},
-		{"Number Lines", "Add line numbers (arg1=start, arg2=format)", numberLines},
-		{"Randomize Lines", "Shuffle lines randomly", randomizeLines},
-		{"Invert Lines", "Reverse the order of lines", invertLines},
-		{"Deduplicate Lines", "Remove duplicate lines, keep first", deduplicateLines},
-		{"Filter Blank Lines", "Remove empty or whitespace-only lines", filterBlankLines},
-		{"Filter Lines by Length", "Keep lines within length range (arg1=min, arg2=max)", filterLinesByLength},
+		{
+			Name:        "Sort Lines",
+			Description: "Sort lines alphabetically",
+			Func:        sortLines,
+			Args: []ArgSpec{
+				{Label: "Options", BackendType: "string", FrontendType: "text", Placeholder: "Options: n (numeric), r (reverse), i (ignore case)", DefaultValue: "", Required: false},
+			},
+		},
+		{
+			Name:        "Number Lines",
+			Description: "Add line numbers",
+			Func:        numberLines,
+			Args: []ArgSpec{
+				{Label: "Start", BackendType: "int", FrontendType: "number", Placeholder: "Starting number", DefaultValue: "1", Required: false},
+				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Format (e.g., '%d. ')", DefaultValue: "%d. ", Required: false},
+			},
+		},
+		{
+			Name:        "Randomize Lines",
+			Description: "Shuffle lines randomly",
+			Func:        randomizeLines,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Invert Lines",
+			Description: "Reverse the order of lines",
+			Func:        invertLines,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Deduplicate Lines",
+			Description: "Remove duplicate lines, keep first",
+			Func:        deduplicateLines,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Filter Blank Lines",
+			Description: "Remove empty or whitespace-only lines",
+			Func:        filterBlankLines,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Filter Lines by Length",
+			Description: "Keep lines within length range",
+			Func:        filterLinesByLength,
+			Args: []ArgSpec{
+				{Label: "Minimum", BackendType: "int", FrontendType: "number", Placeholder: "Min length", DefaultValue: "0", Required: false},
+				{Label: "Maximum", BackendType: "int", FrontendType: "number", Placeholder: "Max length (0=unlimited)", DefaultValue: "0", Required: false},
+			},
+		},
 
 		// Phase 2: Text Formatting
-		{"Wrap Text", "Wrap text at column width (arg1=width, default 80)", wrapText},
-		{"Rewrap Text", "Unwrap and rewrap at width (arg1=width)", rewrapText},
-		{"Make Paragraphs", "Join lines into paragraphs with blank separators", makeParagraphs},
-		{"Quote Text", "Add prefix to each line (arg1=prefix, default '> ')", quoteText},
-		{"Indent Text", "Add indentation to each line (arg1=indent)", indentText},
-		{"Unindent Text", "Remove common leading whitespace", unindentText},
-		{"Center Text", "Center each line within width (arg1=width)", centerText},
+		{
+			Name:        "Wrap Text",
+			Description: "Wrap text at column width",
+			Func:        wrapText,
+			Args: []ArgSpec{
+				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
+			},
+		},
+		{
+			Name:        "Rewrap Text",
+			Description: "Unwrap and rewrap at width",
+			Func:        rewrapText,
+			Args: []ArgSpec{
+				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Column width", DefaultValue: "80", Required: false},
+			},
+		},
+		{
+			Name:        "Make Paragraphs",
+			Description: "Join lines into paragraphs with blank separators",
+			Func:        makeParagraphs,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Quote Text",
+			Description: "Add prefix to each line",
+			Func:        quoteText,
+			Args: []ArgSpec{
+				{Label: "Prefix", BackendType: "string", FrontendType: "text", Placeholder: "Line prefix", DefaultValue: "> ", Required: false},
+			},
+		},
+		{
+			Name:        "Indent Text",
+			Description: "Add indentation to each line",
+			Func:        indentText,
+			Args: []ArgSpec{
+				{Label: "Indent", BackendType: "string", FrontendType: "text", Placeholder: "Indentation text", DefaultValue: "  ", Required: true},
+			},
+		},
+		{
+			Name:        "Unindent Text",
+			Description: "Remove common leading whitespace",
+			Func:        unindentText,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Center Text",
+			Description: "Center each line within width",
+			Func:        centerText,
+			Args: []ArgSpec{
+				{Label: "Width", BackendType: "int", FrontendType: "number", Placeholder: "Total width", DefaultValue: "80", Required: true},
+			},
+		},
 
 		// Phase 3: Case & Characters
-		{"Capitalize Sentences", "Capitalize first letter of each sentence", capitalizeSentences},
-		{"Randomcase", "Randomly capitalize or lowercase each letter", randomcase},
-		{"Strip Diacritics", "Remove accents and diacritical marks", stripDiacritics},
-		{"Reverse Text", "Reverse entire text character by character", reverseText},
-		{"Reverse Words", "Reverse characters in each word", reverseWords},
-		{"Reverse Lines", "Reverse characters in each line", reverseLines},
-		{"Slugify", "Create URL-safe slug from text", slugify},
-		{"Smart Quotes", "Convert straight quotes to curly quotes", smartQuotes},
-		{"Straight Quotes", "Convert curly quotes to straight quotes", straightQuotes},
+		{
+			Name:        "Capitalize Sentences",
+			Description: "Capitalize first letter of each sentence",
+			Func:        capitalizeSentences,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Randomcase",
+			Description: "Randomly capitalize or lowercase each letter",
+			Func:        randomcase,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Strip Diacritics",
+			Description: "Remove accents and diacritical marks",
+			Func:        stripDiacritics,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Reverse Text",
+			Description: "Reverse entire text character by character",
+			Func:        reverseText,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Reverse Words",
+			Description: "Reverse characters in each word",
+			Func:        reverseWords,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Reverse Lines",
+			Description: "Reverse characters in each line",
+			Func:        reverseLines,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Slugify",
+			Description: "Create URL-safe slug from text",
+			Func:        slugify,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Smart Quotes",
+			Description: "Convert straight quotes to curly quotes",
+			Func:        smartQuotes,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Straight Quotes",
+			Description: "Convert curly quotes to straight quotes",
+			Func:        straightQuotes,
+			Args:        []ArgSpec{},
+		},
 
 		// Phase 4: Encoding & Dates
-		{"Base64 Encode", "Encode text as base64", base64Encode},
-		{"Base64 Decode", "Decode base64-encoded text", base64Decode},
-		{"URL Encode", "Percent-encode text for URLs", urlEncode},
-		{"URL Decode", "Decode percent-encoded URLs", urlDecode},
-		{"Hex Encode", "Convert text to hexadecimal", hexEncode},
-		{"Hex Decode", "Convert hexadecimal to text", hexDecode},
-		{"ROT13", "Apply ROT13 cipher to text", rot13},
-		{"Escape Quotes", "Escape quote characters for strings", escapeQuotes},
-		{"Unescape Quotes", "Unescape escaped quote characters", unescapeQuotes},
-		{"Insert Date/Time", "Insert current date/time (arg1=format)", insertDateTime},
+		{
+			Name:        "Base64 Encode",
+			Description: "Encode text as base64",
+			Func:        base64Encode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Base64 Decode",
+			Description: "Decode base64-encoded text",
+			Func:        base64Decode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "URL Encode",
+			Description: "Percent-encode text for URLs",
+			Func:        urlEncode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "URL Decode",
+			Description: "Decode percent-encoded URLs",
+			Func:        urlDecode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Hex Encode",
+			Description: "Convert text to hexadecimal",
+			Func:        hexEncode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Hex Decode",
+			Description: "Convert hexadecimal to text",
+			Func:        hexDecode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "ROT13",
+			Description: "Apply ROT13 cipher to text",
+			Func:        rot13,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Escape Quotes",
+			Description: "Escape quote characters for strings",
+			Func:        escapeQuotes,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Unescape Quotes",
+			Description: "Unescape escaped quote characters",
+			Func:        unescapeQuotes,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Insert Date/Time",
+			Description: "Insert current date/time",
+			Func:        insertDateTime,
+			Args: []ArgSpec{
+				{Label: "Format", BackendType: "string", FrontendType: "text", Placeholder: "Go time format", DefaultValue: "2006-01-02 15:04:05", Required: false},
+			},
+		},
 
 		// Phase 5: Markdown/HTML
-		{"URLs to Hyperlinks", "Convert plain URLs to HTML links (arg1=format)", urlsToHyperlinks},
-		{"Extract URLs", "Find and extract all URLs from text", extractUrls},
-		{"Extract Emails", "Find and extract all email addresses", extractEmails},
-		{"Extract Numbers", "Find and extract all numbers from text", extractNumbers},
+		{
+			Name:        "URLs to Hyperlinks",
+			Description: "Convert plain URLs to HTML links",
+			Func:        urlsToHyperlinks,
+			Args: []ArgSpec{
+				{
+					Label:        "Format",
+					BackendType:  "string",
+					FrontendType: "select",
+					Options:      []string{"html", "markdown"},
+					DefaultValue: "html",
+					Required:     false,
+				},
+			},
+		},
+		{
+			Name:        "Extract URLs",
+			Description: "Find and extract all URLs from text",
+			Func:        extractUrls,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Extract Emails",
+			Description: "Find and extract all email addresses",
+			Func:        extractEmails,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Extract Numbers",
+			Description: "Find and extract all numbers from text",
+			Func:        extractNumbers,
+			Args:        []ArgSpec{},
+		},
 
 		// Phase 6: Advanced Regex
-		{"Extract with Groups", "Extract regex matches with groups (arg1=pattern, arg2=template)", extractWithGroups},
-		{"Replace with Groups", "Replace using regex groups (arg1=pattern, arg2=template)", replaceWithGroups},
-		{"Split by Regex", "Split text by regex pattern (arg1=pattern, arg2=delimiter)", splitByRegex},
-		{"Match Count", "Count number of regex matches (arg1=pattern)", matchCount},
+		{
+			Name:        "Extract with Groups",
+			Description: "Extract regex matches with groups",
+			Func:        extractWithGroups,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression with groups", Required: true},
+				{Label: "Template", BackendType: "string", FrontendType: "text", Placeholder: "Template ($1, $2, etc.)", DefaultValue: "$0", Required: false},
+			},
+		},
+		{
+			Name:        "Replace with Groups",
+			Description: "Replace using regex groups",
+			Func:        replaceWithGroups,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression with groups", Required: true},
+				{Label: "Template", BackendType: "string", FrontendType: "text", Placeholder: "Template ($1, $2, etc.)", Required: true},
+			},
+		},
+		{
+			Name:        "Split by Regex",
+			Description: "Split text by regex pattern",
+			Func:        splitByRegex,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Join delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Match Count",
+			Description: "Count number of regex matches",
+			Func:        matchCount,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
 
 		// Phase 7: Math & Numbers
-		{"Format Numbers", "Format numbers with decimals (arg1=decimals, arg2=separator)", formatNumbersOperation},
-		{"Round Numbers", "Round all numbers to decimals (arg1=decimals)", roundNumbers},
-		{"Sum Numbers", "Extract and sum all numbers in text", sumNumbers},
+		{
+			Name:        "Format Numbers",
+			Description: "Format numbers with decimals",
+			Func:        formatNumbersOperation,
+			Args: []ArgSpec{
+				{Label: "Decimals", BackendType: "int", FrontendType: "number", Placeholder: "Number of decimals", DefaultValue: "2", Required: false},
+				{Label: "Separator", BackendType: "string", FrontendType: "text", Placeholder: "Thousands separator", DefaultValue: ",", Required: false},
+			},
+		},
+		{
+			Name:        "Round Numbers",
+			Description: "Round all numbers to decimals",
+			Func:        roundNumbers,
+			Args: []ArgSpec{
+				{Label: "Decimals", BackendType: "int", FrontendType: "number", Placeholder: "Number of decimals", DefaultValue: "0", Required: false},
+			},
+		},
+		{
+			Name:        "Sum Numbers",
+			Description: "Extract and sum all numbers in text",
+			Func:        sumNumbers,
+			Args:        []ArgSpec{},
+		},
 
 		// Phase 8: List & Extraction
-		{"Join List", "Join lines with delimiter (arg1=delimiter)", joinList},
-		{"Remove Control Characters", "Remove non-printable control characters", removeControlCharacters},
-		{"Count Occurrences", "Count occurrences of string (arg1=search)", countOccurrences},
-		{"Keep Lines Containing", "Keep lines with text (arg1=search, arg2=flags)", keepLinesContaining},
-		{"Remove Lines Containing", "Remove lines with text (arg1=search, arg2=flags)", removeLinesContaining},
-		{"Truncate Text", "Truncate to max length (arg1=length, arg2=ellipsis)", truncateText},
+		{
+			Name:        "Join List",
+			Description: "Join lines with delimiter",
+			Func:        joinList,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Join with", DefaultValue: ", ", Required: false},
+			},
+		},
+		{
+			Name:        "Remove Control Characters",
+			Description: "Remove non-printable control characters",
+			Func:        removeControlCharacters,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Count Occurrences",
+			Description: "Count occurrences of string",
+			Func:        countOccurrences,
+			Args: []ArgSpec{
+				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to count", Required: true},
+			},
+		},
+		{
+			Name:        "Keep Lines Containing",
+			Description: "Keep lines with text",
+			Func:        keepLinesContaining,
+			Args: []ArgSpec{
+				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Flags", BackendType: "string", FrontendType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
+			},
+		},
+		{
+			Name:        "Remove Lines Containing",
+			Description: "Remove lines with text",
+			Func:        removeLinesContaining,
+			Args: []ArgSpec{
+				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
+				{Label: "Flags", BackendType: "string", FrontendType: "text", Placeholder: "Flags (i=ignore case)", DefaultValue: "", Required: false},
+			},
+		},
+		{
+			Name:        "Truncate Text",
+			Description: "Truncate to max length",
+			Func:        truncateText,
+			Args: []ArgSpec{
+				{Label: "Length", BackendType: "int", FrontendType: "number", Placeholder: "Maximum length", Required: true},
+				{Label: "Ellipsis", BackendType: "string", FrontendType: "text", Placeholder: "Ellipsis text", DefaultValue: "...", Required: false},
+			},
+		},
 
 		// Phase 9: Conditional Operations
-		{"Is Empty", "Returns 'true' if empty/whitespace, else 'false'", isEmpty},
-		{"Has Pattern", "Returns 'true' if matches pattern (arg1=pattern)", hasPattern},
-		{"Starts With", "Returns 'true' if starts with text (arg1=text)", startsWith},
+		{
+			Name:        "Is Empty",
+			Description: "Returns 'true' if empty/whitespace, else 'false'",
+			Func:        isEmpty,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Has Pattern",
+			Description: "Returns 'true' if matches pattern",
+			Func:        hasPattern,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
+		{
+			Name:        "Starts With",
+			Description: "Returns 'true' if starts with text",
+			Func:        startsWith,
+			Args: []ArgSpec{
+				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Starting text", Required: true},
+			},
+		},
 
 		// Phase 10: List Processing
-		{"Unique Values", "Remove duplicates (arg1=delimiter)", uniqueValues},
-		{"Most Common", "Find most frequent item (arg1=delimiter)", mostCommon},
-		{"Least Common", "Find least frequent item (arg1=delimiter)", leastCommon},
-		{"Reverse Lines", "Reverse the order of lines", reverseLinesOrder},
-		{"Group By Pattern", "Group lines by regex match (arg1=pattern)", groupByPattern},
+		{
+			Name:        "Unique Values",
+			Description: "Remove duplicates",
+			Func:        uniqueValues,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Most Common",
+			Description: "Find most frequent item",
+			Func:        mostCommon,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Least Common",
+			Description: "Find least frequent item",
+			Func:        leastCommon,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Reverse Lines",
+			Description: "Reverse the order of lines",
+			Func:        reverseLinesOrder,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Group By Pattern",
+			Description: "Group lines by regex match",
+			Func:        groupByPattern,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
 
 		// Phase 11: Advanced Text Operations
-		{"Word Count", "Count words, characters, and lines", wordCount},
-		{"Character Count", "Count occurrences of character (arg1=char)", characterCount},
-		{"Line Count", "Count total number of lines", lineCount},
-		{"Text Statistics", "Show detailed text statistics", textStatistics},
-		{"Min Word Length", "Find minimum word length", minWordLength},
-		{"Max Word Length", "Find maximum word length", maxWordLength},
-		{"Average Word Length", "Calculate average word length", averageWordLength},
+		{
+			Name:        "Word Count",
+			Description: "Count words, characters, and lines",
+			Func:        wordCount,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Character Count",
+			Description: "Count occurrences of character",
+			Func:        characterCount,
+			Args: []ArgSpec{
+				{Label: "Character", BackendType: "string", FrontendType: "text", Placeholder: "Character to count", Required: true},
+			},
+		},
+		{
+			Name:        "Line Count",
+			Description: "Count total number of lines",
+			Func:        lineCount,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Text Statistics",
+			Description: "Show detailed text statistics",
+			Func:        textStatistics,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Min Word Length",
+			Description: "Find minimum word length",
+			Func:        minWordLength,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Max Word Length",
+			Description: "Find maximum word length",
+			Func:        maxWordLength,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Average Word Length",
+			Description: "Calculate average word length",
+			Func:        averageWordLength,
+			Args:        []ArgSpec{},
+		},
 
 		// Phase 12: Advanced Pattern Operations
-		{"Whole Word Match", "Find whole word matches only (arg1=word)", wholeWordMatch},
-		{"Case Sensitive Find", "Count case-sensitive matches (arg1=search)", caseSensitiveFind},
-		{"Multi-line Pattern", "Apply multiline regex (arg1=pattern)", multilinePattern},
-		{"Look-ahead Pattern", "Match text followed by pattern (arg1, arg2)", lookaheadPattern},
-		{"Look-behind Pattern", "Match text preceded by pattern (arg1, arg2)", lookbehindPattern},
-		{"Conditional Replace", "Replace based on conditions (arg1=pattern, arg2=replacement)", conditionalReplace},
+		{
+			Name:        "Whole Word Match",
+			Description: "Find whole word matches only",
+			Func:        wholeWordMatch,
+			Args: []ArgSpec{
+				{Label: "Word", BackendType: "string", FrontendType: "text", Placeholder: "Word to match", Required: true},
+			},
+		},
+		{
+			Name:        "Case Sensitive Find",
+			Description: "Count case-sensitive matches",
+			Func:        caseSensitiveFind,
+			Args: []ArgSpec{
+				{Label: "Search", BackendType: "string", FrontendType: "text", Placeholder: "Text to find", Required: true},
+			},
+		},
+		{
+			Name:        "Multi-line Pattern",
+			Description: "Apply multiline regex",
+			Func:        multilinePattern,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+			},
+		},
+		{
+			Name:        "Look-ahead Pattern",
+			Description: "Match text followed by pattern",
+			Func:        lookaheadPattern,
+			Args: []ArgSpec{
+				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Text to match", Required: true},
+				{Label: "Followed by", BackendType: "string", FrontendType: "text", Placeholder: "Pattern that follows", Required: true},
+			},
+		},
+		{
+			Name:        "Look-behind Pattern",
+			Description: "Match text preceded by pattern",
+			Func:        lookbehindPattern,
+			Args: []ArgSpec{
+				{Label: "Text", BackendType: "string", FrontendType: "text", Placeholder: "Text to match", Required: true},
+				{Label: "Preceded by", BackendType: "string", FrontendType: "text", Placeholder: "Pattern before", Required: true},
+			},
+		},
+		{
+			Name:        "Conditional Replace",
+			Description: "Replace based on conditions",
+			Func:        conditionalReplace,
+			Args: []ArgSpec{
+				{Label: "Pattern", BackendType: "string", FrontendType: "text", Placeholder: "Regular expression", Required: true},
+				{Label: "Replacement", BackendType: "string", FrontendType: "text", Placeholder: "Replacement text", Required: true},
+			},
+		},
 
 		// Phase 13: Transformation Macros
-		{"Chain Operations", "Chain multiple operations (arg1=op1|op2|op3)", chainOperations},
-		{"Repeat Operation", "Repeat operation N times (arg1=op, arg2=count)", repeatOperation},
-		{"Swap Pairs", "Swap pairs of items (arg1=delimiter)", swapPairs},
-		{"Reverse Order Items", "Reverse order of items (arg1=delimiter)", reverseOrderItems},
+		{
+			Name:        "Chain Operations",
+			Description: "Chain multiple operations",
+			Func:        chainOperations,
+			Args: []ArgSpec{
+				{Label: "Operations", BackendType: "string", FrontendType: "text", Placeholder: "op1|op2|op3", Required: true},
+			},
+		},
+		{
+			Name:        "Repeat Operation",
+			Description: "Repeat operation N times",
+			Func:        repeatOperation,
+			Args: []ArgSpec{
+				{Label: "Operation", BackendType: "string", FrontendType: "text", Placeholder: "Operation name", Required: true},
+				{Label: "Count", BackendType: "int", FrontendType: "number", Placeholder: "Repeat count", DefaultValue: "1", Required: true},
+			},
+		},
+		{
+			Name:        "Swap Pairs",
+			Description: "Swap pairs of items",
+			Func:        swapPairs,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Reverse Order Items",
+			Description: "Reverse order of items",
+			Func:        reverseOrderItems,
+			Args: []ArgSpec{
+				{Label: "Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Item delimiter", DefaultValue: "\n", Required: false},
+			},
+		},
 
 		// Phase 14: HTML/Markdown Advanced
-		{"HTML to Markdown", "Convert HTML to Markdown (simplified)", htmlToMarkdown},
-		{"Markdown to HTML", "Convert Markdown to HTML (simplified)", markdownToHTML},
-		{"Extract Text from HTML", "Extract all text content from HTML", extractTextFromHTML},
-		{"Create Markdown Table", "Create table from delimited data (arg1=col, arg2=row)", createMarkdownTable},
-		{"Parse YAML Front Matter", "Extract YAML front matter from document", parseYAMLFrontMatter},
-		{"Markdown Link Format", "Convert markdown links to format (arg1=format)", markdownLinkFormat},
+		{
+			Name:        "HTML to Markdown",
+			Description: "Convert HTML to Markdown (simplified)",
+			Func:        htmlToMarkdown,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Markdown to HTML",
+			Description: "Convert Markdown to HTML (simplified)",
+			Func:        markdownToHTML,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Extract Text from HTML",
+			Description: "Extract all text content from HTML",
+			Func:        extractTextFromHTML,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Create Markdown Table",
+			Description: "Create table from delimited data",
+			Func:        createMarkdownTable,
+			Args: []ArgSpec{
+				{Label: "Column Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Column separator", DefaultValue: ",", Required: false},
+				{Label: "Row Delimiter", BackendType: "string", FrontendType: "text", Placeholder: "Row separator", DefaultValue: "\n", Required: false},
+			},
+		},
+		{
+			Name:        "Parse YAML Front Matter",
+			Description: "Extract YAML front matter from document",
+			Func:        parseYAMLFrontMatter,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Markdown Link Format",
+			Description: "Convert markdown links to format",
+			Func:        markdownLinkFormat,
+			Args: []ArgSpec{
+				{
+					Label:        "Format",
+					BackendType:  "string",
+					FrontendType: "select",
+					Options:      []string{"text", "url", "both"},
+					DefaultValue: "both",
+					Required:     false,
+				},
+			},
+		},
 
 		// Phase 15: Unicode & Special Characters
-		{"Unicode Names", "Show Unicode names for non-ASCII characters", unicodeNames},
-		{"Convert Unicode Escapes", "Convert \\uXXXX escapes to characters", convertUnicodeEscapes},
-		{"Escape Unicode", "Convert characters to \\uXXXX format", escapeUnicode},
-		{"Show Invisible Characters", "Display invisible characters visibly", showInvisibleCharacters},
-		{"Normalize Unicode", "Apply Unicode normalization (simplified)", normalizeUnicode},
+		{
+			Name:        "Unicode Names",
+			Description: "Show Unicode names for non-ASCII characters",
+			Func:        unicodeNames,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Convert Unicode Escapes",
+			Description: "Convert \\uXXXX escapes to characters",
+			Func:        convertUnicodeEscapes,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Escape Unicode",
+			Description: "Convert characters to \\uXXXX format",
+			Func:        escapeUnicode,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Show Invisible Characters",
+			Description: "Display invisible characters visibly",
+			Func:        showInvisibleCharacters,
+			Args:        []ArgSpec{},
+		},
+		{
+			Name:        "Normalize Unicode",
+			Description: "Apply Unicode normalization (simplified)",
+			Func:        normalizeUnicode,
+			Args:        []ArgSpec{},
+		},
 	}
 }
 
