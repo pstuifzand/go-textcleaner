@@ -298,6 +298,102 @@ func TestForEachLineOperation(t *testing.T) {
 	}
 }
 
+// TestForEachWithCustomDelimiter tests foreach with custom split delimiter
+func TestForEachWithCustomDelimiter(t *testing.T) {
+	core := NewTextCleanerCore()
+	forEachID := core.CreateNode("foreach", "ForEach", "", ",", ",", "")
+	core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+
+	core.SetInputText("apple,banana,cherry")
+
+	output := core.GetOutputText()
+	expected := "APPLE,BANANA,CHERRY"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
+// TestForEachWithDifferentJoinSeparator tests foreach with different split and join delimiters
+func TestForEachWithDifferentJoinSeparator(t *testing.T) {
+	core := NewTextCleanerCore()
+	forEachID := core.CreateNode("foreach", "ForEach", "", ",", "\n", "")
+	core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+
+	core.SetInputText("apple,banana,cherry")
+
+	output := core.GetOutputText()
+	expected := "APPLE\nBANANA\nCHERRY"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
+// TestForEachWithSpaceSeparator tests foreach with space as separator
+func TestForEachWithSpaceSeparator(t *testing.T) {
+	core := NewTextCleanerCore()
+	forEachID := core.CreateNode("foreach", "ForEach", "", " ", " | ", "")
+	core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+
+	core.SetInputText("hello world test")
+
+	output := core.GetOutputText()
+	expected := "HELLO | WORLD | TEST"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
+// TestForEachWithNestedOperations tests foreach with multiple child operations
+func TestForEachWithNestedOperations(t *testing.T) {
+	core := NewTextCleanerCore()
+	forEachID := core.CreateNode("foreach", "ForEach", "", ",", ";", "")
+	uppercaseID, _ := core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+	core.AddChildNode(uppercaseID, "operation", "Replace Text", "Replace Text", "A", "X", "")
+
+	core.SetInputText("apple,banana,apricot")
+
+	output := core.GetOutputText()
+	expected := "XPPLE;BXNXNX;XPRICOT"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
+// TestForEachWithEscapeSequences tests foreach with escape sequences in delimiters
+func TestForEachWithEscapeSequences(t *testing.T) {
+	core := NewTextCleanerCore()
+	// Use \n escape sequence in Arg1 (will be converted to actual newline by processor)
+	// Use ; as join separator
+	forEachID := core.CreateNode("foreach", "ForEach", "", "\\n", ";", "")
+	core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+
+	// Input has actual newline characters between items
+	core.SetInputText("apple\nbanana\ncherry")
+
+	output := core.GetOutputText()
+	expected := "APPLE;BANANA;CHERRY"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
+// TestForEachWithTabSeparator tests foreach with tab escape sequence
+func TestForEachWithTabSeparator(t *testing.T) {
+	core := NewTextCleanerCore()
+	// Use \t as tab separator
+	forEachID := core.CreateNode("foreach", "ForEach", "", "\\t", "\\n", "")
+	core.AddChildNode(forEachID, "operation", "Uppercase", "Uppercase", "", "", "")
+
+	// Input with tab characters
+	core.SetInputText("a\tb\tc")
+
+	output := core.GetOutputText()
+	expected := "A\nB\nC"
+	if output != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, output)
+	}
+}
+
 // TestGroupOperation tests group node structure
 func TestGroupOperation(t *testing.T) {
 	core := NewTextCleanerCore()

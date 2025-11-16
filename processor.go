@@ -109,6 +109,7 @@ func GetOperations() []Operation {
 		{"Indent Text", "Add indentation to each line (arg1=indent)", indentText},
 		{"Unindent Text", "Remove common leading whitespace", unindentText},
 		{"Center Text", "Center each line within width (arg1=width)", centerText},
+		{"Remove Comments", "Remove code comments (#, //, /* */; arg1=type filter)", removeComments},
 
 		// Phase 3: Case & Characters
 		{"Capitalize Sentences", "Capitalize first letter of each sentence", capitalizeSentences},
@@ -207,6 +208,12 @@ func GetOperations() []Operation {
 		{"Escape Unicode", "Convert characters to \\uXXXX format", escapeUnicode},
 		{"Show Invisible Characters", "Display invisible characters visibly", showInvisibleCharacters},
 		{"Normalize Unicode", "Apply Unicode normalization (simplified)", normalizeUnicode},
+
+		// Phase 16: Data Format Deserialization
+		{"PHP Deserialize", "Deserialize PHP serialized data to JSON (arg1=outputValidJSON true/false)", phpDeserialize},
+
+		// Phase 17: JSON Formatting
+		{"JSON Format", "Format JSON with indentation and optional prefix (arg1=spaces, arg2=prefix)", jsonFormat},
 	}
 }
 
@@ -303,21 +310,39 @@ func executeIfNode(node *PipelineNode, input string) string {
 	}
 }
 
-// executeForEachNode applies children to each line
+// executeForEachNode applies children to each item split by Arg1, joined by Arg2
 func executeForEachNode(node *PipelineNode, input string) string {
 	if input == "" {
 		return input
 	}
 
-	lines := strings.Split(input, "\n")
-	result := make([]string, len(lines))
-
-	for i, line := range lines {
-		// Execute all children on this line
-		result[i] = executeSequenceNode(&PipelineNode{Children: node.Children}, line)
+	// Get split delimiter from Arg1, default to newline
+	splitDelim := node.Arg1
+	if splitDelim == "" {
+		splitDelim = "\n"
+	} else {
+		// Process escape sequences in delimiter (e.g., \n, \t)
+		splitDelim = processEscapeSequences(splitDelim)
 	}
 
-	return strings.Join(result, "\n")
+	// Get join separator from Arg2, default to newline
+	joinSep := node.Arg2
+	if joinSep == "" {
+		joinSep = "\n"
+	} else {
+		// Process escape sequences in separator (e.g., \n, \t)
+		joinSep = processEscapeSequences(joinSep)
+	}
+
+	items := strings.Split(input, splitDelim)
+	result := make([]string, len(items))
+
+	for i, item := range items {
+		// Execute all children on this item
+		result[i] = executeSequenceNode(&PipelineNode{Children: node.Children}, item)
+	}
+
+	return strings.Join(result, joinSep)
 }
 
 // executeGroupNode passes through to children (no operation logic)
@@ -2828,4 +2853,445 @@ func formatNumber(num float64) string {
 	formatted = strings.TrimRight(formatted, ".")
 
 	return formatted
+}
+
+// phpDeserialize deserializes PHP serialized data and outputs it as JSON
+// arg1: "true" to output valid JSON (quotes integer keys, escapes backslashes)
+func phpDeserialize(input, arg1, arg2 string) string {
+	outputValidJSON := strings.ToLower(arg1) == "true"
+
+	inputRunes := []rune(input)
+	pos := 0
+
+	type deserializeResult struct {
+		value string
+		err   error
+	}
+
+	var deserialize func() deserializeResult
+	deserialize = func() deserializeResult {
+		if pos >= len(inputRunes) {
+			return deserializeResult{"", fmt.Errorf("end of input reached before end of script")}
+		}
+
+		kind := strings.ToLower(string(inputRunes[pos]))
+		pos++
+
+		switch kind {
+		case "n": // null
+			if pos >= len(inputRunes) || inputRunes[pos] != ';' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++
+			return deserializeResult{"null", nil}
+
+		case "i", "d": // integer or double
+			if pos >= len(inputRunes) || inputRunes[pos] != ':' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++
+			// Read until ;
+			start := pos
+			for pos < len(inputRunes) && inputRunes[pos] != ';' {
+				pos++
+			}
+			if pos >= len(inputRunes) {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			data := string(inputRunes[start:pos])
+			pos++ // consume ;
+			return deserializeResult{data, nil}
+
+		case "b": // boolean
+			if pos >= len(inputRunes) || inputRunes[pos] != ':' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++
+			// Read until ;
+			start := pos
+			for pos < len(inputRunes) && inputRunes[pos] != ';' {
+				pos++
+			}
+			if pos >= len(inputRunes) {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			data := string(inputRunes[start:pos])
+			pos++ // consume ;
+			boolVal := data != "0"
+			if boolVal {
+				return deserializeResult{"true", nil}
+			}
+			return deserializeResult{"false", nil}
+
+		case "s": // string
+			if pos >= len(inputRunes) || inputRunes[pos] != ':' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++
+			// Read length
+			start := pos
+			for pos < len(inputRunes) && inputRunes[pos] != ':' {
+				pos++
+			}
+			if pos >= len(inputRunes) {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			lengthStr := string(inputRunes[start:pos])
+			pos++ // consume :
+			length, err := strconv.Atoi(lengthStr)
+			if err != nil {
+				return deserializeResult{"", fmt.Errorf("invalid string length")}
+			}
+			if pos >= len(inputRunes) || inputRunes[pos] != '"' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++ // consume "
+			if pos+length > len(inputRunes) {
+				return deserializeResult{"", fmt.Errorf("end of input reached before end of script")}
+			}
+			value := string(inputRunes[pos : pos+length])
+			pos += length
+			if pos+1 >= len(inputRunes) || inputRunes[pos] != '"' || inputRunes[pos+1] != ';' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos += 2 // consume ";
+			if outputValidJSON {
+				value = strings.ReplaceAll(value, "\\", "\\\\")
+				value = strings.ReplaceAll(value, "\"", "\\\"")
+			}
+			return deserializeResult{"\"" + value + "\"", nil}
+
+		case "o", "a": // object or array
+			if pos >= len(inputRunes) || inputRunes[pos] != ':' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++
+
+			var className string
+			// For objects, read class name first
+			if kind == "o" {
+				// Read class name length
+				start := pos
+				for pos < len(inputRunes) && inputRunes[pos] != ':' {
+					pos++
+				}
+				if pos >= len(inputRunes) {
+					return deserializeResult{"", fmt.Errorf("unexpected input found")}
+				}
+				classNameLen, err := strconv.Atoi(string(inputRunes[start:pos]))
+				if err != nil {
+					return deserializeResult{"", fmt.Errorf("invalid class name length")}
+				}
+				pos++ // consume :
+				if pos >= len(inputRunes) || inputRunes[pos] != '"' {
+					return deserializeResult{"", fmt.Errorf("unexpected input found")}
+				}
+				pos++ // consume "
+				if pos+classNameLen > len(inputRunes) {
+					return deserializeResult{"", fmt.Errorf("end of input reached before end of script")}
+				}
+				className = string(inputRunes[pos : pos+classNameLen])
+				pos += classNameLen
+				if pos+1 >= len(inputRunes) || inputRunes[pos] != '"' || inputRunes[pos+1] != ':' {
+					return deserializeResult{"", fmt.Errorf("unexpected input found")}
+				}
+				pos += 2 // consume ":
+			}
+
+			// Read count (number of properties/items)
+			start := pos
+			for pos < len(inputRunes) && inputRunes[pos] != ':' {
+				pos++
+			}
+			if pos >= len(inputRunes) {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			countStr := string(inputRunes[start:pos])
+			pos++ // consume :
+			count, err := strconv.Atoi(countStr)
+			if err != nil {
+				return deserializeResult{"", fmt.Errorf("invalid count")}
+			}
+			if pos >= len(inputRunes) || inputRunes[pos] != '{' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++ // consume {
+
+			// First pass: collect all key-value pairs to check if it's a sequential array
+			type keyValuePair struct {
+				key   string
+				value string
+			}
+			pairs := make([]keyValuePair, 0)
+			for i := 0; i < count; i++ {
+				// Read key
+				keyResult := deserialize()
+				if keyResult.err != nil {
+					return keyResult
+				}
+				key := keyResult.value
+
+				// Read value
+				valueResult := deserialize()
+				if valueResult.err != nil {
+					return valueResult
+				}
+				value := valueResult.value
+
+				pairs = append(pairs, keyValuePair{key, value})
+			}
+
+			if pos >= len(inputRunes) || inputRunes[pos] != '}' {
+				return deserializeResult{"", fmt.Errorf("unexpected input found")}
+			}
+			pos++ // consume }
+
+			// Check if this is a sequential numeric array (keys 0, 1, 2, ...)
+			isSequentialArray := kind == "a" && len(pairs) > 0
+			if isSequentialArray {
+				for i, pair := range pairs {
+					keyUnquoted := strings.Trim(pair.key, "\"")
+					expectedIndex := strconv.Itoa(i)
+					if keyUnquoted != expectedIndex {
+						isSequentialArray = false
+						break
+					}
+				}
+			}
+
+			// For objects, wrap with class name
+			if kind == "o" {
+				items := make([]string, 0)
+				for _, pair := range pairs {
+					items = append(items, pair.key+": "+pair.value)
+				}
+				return deserializeResult{"{\"__class__\": \"" + className + "\", \"properties\": {" + strings.Join(items, ",") + "}}", nil}
+			}
+
+			// For arrays, check if sequential or associative
+			if isSequentialArray {
+				// Output as JSON array
+				values := make([]string, len(pairs))
+				for i, pair := range pairs {
+					values[i] = pair.value
+				}
+				return deserializeResult{"[" + strings.Join(values, ",") + "]", nil}
+			} else {
+				// Output as JSON object
+				// Always quote numeric keys when array is not sequential (for valid JSON)
+				items := make([]string, 0)
+				for _, pair := range pairs {
+					keyUnquoted := strings.Trim(pair.key, "\"")
+					isNumeric := true
+					for _, ch := range keyUnquoted {
+						if !unicode.IsDigit(ch) {
+							isNumeric = false
+							break
+						}
+					}
+
+					if isNumeric {
+						// Always quote numeric keys in associative arrays
+						items = append(items, "\""+keyUnquoted+"\": "+pair.value)
+					} else {
+						items = append(items, pair.key+": "+pair.value)
+					}
+				}
+				return deserializeResult{"{" + strings.Join(items, ",") + "}", nil}
+			}
+
+		default:
+			return deserializeResult{"", fmt.Errorf("unknown type: %s", kind)}
+		}
+	}
+
+	result := deserialize()
+	if result.err != nil {
+		return "Error: " + result.err.Error()
+	}
+	return result.value
+}
+
+// jsonFormat formats JSON with optional indentation and prefix on each line
+// arg1: number of spaces for indentation (default: 2, use "0" for compact)
+// arg2: prefix to add to each line (default: "", can use quoting prefix like "> ")
+func jsonFormat(input, arg1, arg2 string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return input
+	}
+
+	// Parse the JSON to validate it
+	var data interface{}
+	err := json.Unmarshal([]byte(input), &data)
+	if err != nil {
+		return "Error: Invalid JSON - " + err.Error()
+	}
+
+	// Determine indent size
+	indentSize := 2 // default
+	if arg1 != "" {
+		if size, err := strconv.Atoi(arg1); err == nil && size >= 0 {
+			indentSize = size
+		}
+	}
+
+	// Marshal back with indentation
+	var result string
+	if indentSize == 0 {
+		// For compact output, use Marshal without indent
+		formatted, err := json.Marshal(data)
+		if err != nil {
+			return "Error: Failed to format JSON - " + err.Error()
+		}
+		result = string(formatted)
+	} else {
+		// For formatted output, use MarshalIndent
+		indent := strings.Repeat(" ", indentSize)
+		formatted, err := json.MarshalIndent(data, "", indent)
+		if err != nil {
+			return "Error: Failed to format JSON - " + err.Error()
+		}
+		result = string(formatted)
+	}
+
+	// Apply prefix if provided
+	if arg2 != "" {
+		lines := strings.Split(result, "\n")
+		for i, line := range lines {
+			lines[i] = arg2 + line
+		}
+		result = strings.Join(lines, "\n")
+	}
+
+	return result
+}
+
+// removeComments removes comments from source code
+// Supports single-line comments (#, //) and block comments (/* */)
+// arg1: comment type filter (optional)
+//   - "#" or "python" - remove Python/Shell comments only
+//   - "//" or "c" - remove C/C++/JavaScript comments only
+//   - "/*" or "block" - remove block comments only
+//   - "" or "all" - remove all comment types (default)
+func removeComments(input, arg1, arg2 string) string {
+	if input == "" {
+		return input
+	}
+
+	// Default: remove all comment types
+	removeHash := true
+	removeSlash := true
+	removeBlock := true
+
+	// Filter by type if specified
+	if arg1 != "" && arg1 != "all" {
+		removeHash = false
+		removeSlash = false
+		removeBlock = false
+
+		switch arg1 {
+		case "#", "python", "shell":
+			removeHash = true
+		case "//", "c", "cpp", "javascript", "js":
+			removeSlash = true
+		case "/*", "block", "multiline":
+			removeBlock = true
+		}
+	}
+
+	// First, handle block comments /* ... */ if needed
+	if removeBlock {
+		input = removeBlockComments(input)
+	}
+
+	// Then handle line comments
+	lines := strings.Split(input, "\n")
+	result := make([]string, len(lines))
+
+	for i, line := range lines {
+		if removeHash {
+			line = removeLineComment(line, "#")
+		}
+		if removeSlash {
+			line = removeLineComment(line, "//")
+		}
+		result[i] = line
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// removeBlockComments removes /* ... */ style block comments
+func removeBlockComments(input string) string {
+	var result strings.Builder
+	i := 0
+
+	for i < len(input) {
+		// Check for block comment start
+		if i < len(input)-1 && input[i] == '/' && input[i+1] == '*' {
+			// Skip to end of comment
+			i += 2
+			for i < len(input)-1 {
+				if input[i] == '*' && input[i+1] == '/' {
+					i += 2
+					break
+				}
+				i++
+			}
+			// If we reached EOF while looking for end, skip remaining
+			if i >= len(input)-1 && (i < 2 || input[i-2] != '*' || input[i-1] != '/') {
+				i = len(input)
+			}
+		} else {
+			result.WriteByte(input[i])
+			i++
+		}
+	}
+
+	return result.String()
+}
+
+// removeLineComment removes a line comment starting with the given prefix
+// Tries to preserve strings to avoid removing comment markers inside strings
+func removeLineComment(line string, commentPrefix string) string {
+	// Find all occurrences of the comment marker
+	searchIdx := 0
+	for {
+		commentIdx := strings.Index(line[searchIdx:], commentPrefix)
+		if commentIdx < 0 {
+			return line
+		}
+		commentIdx += searchIdx
+
+		// Check if the comment marker is inside a string
+		singleQuotes := 0
+		doubleQuotes := 0
+		var inEscape bool
+
+		for i := 0; i < commentIdx; i++ {
+			if inEscape {
+				inEscape = false
+				continue
+			}
+			if line[i] == '\\' {
+				inEscape = true
+				continue
+			}
+			if line[i] == '\'' {
+				singleQuotes++
+			} else if line[i] == '"' {
+				doubleQuotes++
+			}
+		}
+
+		// If not inside a string literal, remove the comment
+		if singleQuotes%2 == 0 && doubleQuotes%2 == 0 {
+			// Remove everything from comment marker to end of line
+			return strings.TrimRight(line[:commentIdx], " \t")
+		}
+
+		// Comment marker is inside a string, keep looking
+		searchIdx = commentIdx + len(commentPrefix)
+	}
 }

@@ -1071,8 +1071,8 @@ func (tc *TextCleaner) updateNodeTypeUI() {
 		tc.conditionEntry.ShowAll()
 	case "ForEachLine":
 		tc.operationCombo.Hide()
-		tc.argument1.Hide()
-		tc.argument2.Hide()
+		tc.argument1.ShowAll()
+		tc.argument2.ShowAll()
 		tc.conditionEntry.Hide()
 	case "Group":
 		tc.operationCombo.Hide()
@@ -1266,6 +1266,9 @@ func (tc *TextCleaner) updateSelectedNode() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	selectedID := tc.commands.GetSelectedNodeID()
@@ -1316,6 +1319,9 @@ func (tc *TextCleaner) updateNodeFromUIFields() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	// Update node via commands interface (works with both local core and socket wrapper)
@@ -1380,6 +1386,9 @@ func (tc *TextCleaner) addChildNode() {
 		arg2, _ = tc.argument2.GetText()
 	} else if nodeType == "If (Conditional)" {
 		condition, _ = tc.conditionEntry.GetText()
+	} else if nodeType == "ForEachLine" {
+		arg1, _ = tc.argument1.GetText()
+		arg2, _ = tc.argument2.GetText()
 	}
 
 	coreNodeType := tc.getNodeTypeFromUI(nodeType)

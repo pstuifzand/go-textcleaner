@@ -157,7 +157,7 @@ func (f *REPLFormatter) printTreeNodes(nodes []interface{}, indent int) {
 			}
 
 			if f.useColor {
-				fmt.Printf(color.CyanString(name) + color.YellowString(operation) + " " + color.BlackString("(%s)\n", nodeID))
+				fmt.Print(color.CyanString(name) + color.YellowString(operation) + " " + color.BlackString(fmt.Sprintf("(%s)", nodeID)) + "\n")
 			} else {
 				fmt.Printf("%s%s (%s)\n", name, operation, nodeID)
 			}
