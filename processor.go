@@ -195,7 +195,7 @@ func GetOperations() []Operation {
 			Func:        splitFormat,
 			Args: []ArgSpec{
 				{Label: "Delimiter", BackendType: "string", FrontendType: "text", InputType: "delimiter", Placeholder: "Split by", DefaultValue: ",", Required: true},
-				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Format string with $1, $2, etc.", DefaultValue: "$1", Required: true},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "template", Placeholder: "Format string with $1, $2, etc.", DefaultValue: "$1", Required: true},
 			},
 		},
 
@@ -239,7 +239,7 @@ func GetOperations() []Operation {
 			Description: "Select elements using CSS selector",
 			Func:        selectHtml,
 			Args: []ArgSpec{
-				{Label: "Selector", BackendType: "string", FrontendType: "text", InputType: "selector", Placeholder: "CSS selector (e.g., div.class)", Required: true},
+				{Label: "Selector", BackendType: "string", FrontendType: "text", InputType: "css-selector", Placeholder: "CSS selector (e.g., div.class)", Required: true},
 			},
 		},
 
@@ -249,7 +249,7 @@ func GetOperations() []Operation {
 			Description: "Extract JSON data using path notation",
 			Func:        selectJson,
 			Args: []ArgSpec{
-				{Label: "Path", BackendType: "string", FrontendType: "text", InputType: "selector", Placeholder: "JSON path (e.g., .users[0].name)", Required: true},
+				{Label: "Path", BackendType: "string", FrontendType: "text", InputType: "json-path", Placeholder: "JSON path (e.g., .users[0].name)", Required: true},
 			},
 		},
 
@@ -311,7 +311,7 @@ func GetOperations() []Operation {
 			Func:        numberLines,
 			Args: []ArgSpec{
 				{Label: "Start", BackendType: "int", FrontendType: "number", InputType: "number", Placeholder: "Starting number", DefaultValue: "1", Required: false},
-				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Format (e.g., '%d. ')", DefaultValue: "%d. ", Required: false},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "printf-format", Placeholder: "Format (e.g., '%d. ')", DefaultValue: "%d. ", Required: false},
 			},
 		},
 		{
@@ -518,7 +518,7 @@ func GetOperations() []Operation {
 			Description: "Insert current date/time",
 			Func:        insertDateTime,
 			Args: []ArgSpec{
-				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Go time format", DefaultValue: "2006-01-02 15:04:05", Required: false},
+				{Label: "Format", BackendType: "string", FrontendType: "text", InputType: "datetime-format", Placeholder: "Go time format", DefaultValue: "2006-01-02 15:04:05", Required: false},
 			},
 		},
 
@@ -565,7 +565,7 @@ func GetOperations() []Operation {
 			Func:        extractWithGroups,
 			Args: []ArgSpec{
 				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression with groups", Required: true},
-				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Template ($1, $2, etc.)", DefaultValue: "$0", Required: false},
+				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "template", Placeholder: "Template ($1, $2, etc.)", DefaultValue: "$0", Required: false},
 			},
 		},
 		{
@@ -574,7 +574,7 @@ func GetOperations() []Operation {
 			Func:        replaceWithGroups,
 			Args: []ArgSpec{
 				{Label: "Pattern", BackendType: "string", FrontendType: "text", InputType: "regex", Placeholder: "Regular expression with groups", Required: true},
-				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "format", Placeholder: "Template ($1, $2, etc.)", Required: true},
+				{Label: "Template", BackendType: "string", FrontendType: "text", InputType: "template", Placeholder: "Template ($1, $2, etc.)", Required: true},
 			},
 		},
 		{
