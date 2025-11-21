@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -434,4 +435,83 @@ func TestRemoveComments(t *testing.T) {
 	}
 }
 
+func TestHexdump(t *testing.T) {
+	tests := []struct {
+		input    string
+		desc     string
+		validate func(string) bool
+	}{
+		{
+			input: "Hello World!",
+			desc:  "Simple text",
+			validate: func(output string) bool {
+				// Check that output contains the offset
+				if !strings.Contains(output, "00000000:") {
+					return false
+				}
+				// Check that output contains hex representation of 'H' (48 = 0x48)
+				if !strings.Contains(output, "48") {
+					return false
+				}
+				// Check that output contains ASCII representation
+				if !strings.Contains(output, "Hello World!") {
+					return false
+				}
+				return true
+			},
+		},
+		{
+			input: "Test\nLine",
+			desc:  "Text with newline",
+			validate: func(output string) bool {
+				// Check that newline character is shown as dot in ASCII section
+				lines := strings.Split(output, "\n")
+				if len(lines) < 1 {
+					return false
+				}
+				// First line should contain "Test.Line" (newline as dot)
+				return strings.Contains(output, "Test.Line")
+			},
+		},
+		{
+			input: "A",
+			desc:  "Single character",
+			validate: func(output string) bool {
+				// Should have offset 00000000
+				if !strings.Contains(output, "00000000:") {
+					return false
+				}
+				// Should contain hex for 'A' (0x41)
+				if !strings.Contains(output, "41") {
+					return false
+				}
+				// Should contain ASCII 'A'
+				if !strings.Contains(output, "A") {
+					return false
+				}
+				return true
+			},
+		},
+		{
+			input: strings.Repeat("X", 20),
+			desc:  "Multiple lines (20 bytes)",
+			validate: func(output string) bool {
+				// Should have two offsets: 00000000 and 00000010
+				hasFirstLine := strings.Contains(output, "00000000:")
+				hasSecondLine := strings.Contains(output, "00000010:")
+				return hasFirstLine && hasSecondLine
+			},
+		},
+	}
 
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			result := hexdump(test.input, "", "")
+			if !test.validate(result) {
+				t.Errorf("Input: %q", test.input)
+				t.Errorf("Output:\n%s", result)
+				t.Error("Validation failed")
+			}
+		})
+	}
+}

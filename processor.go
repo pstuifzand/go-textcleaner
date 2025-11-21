@@ -503,6 +503,12 @@ func GetOperations() []Operation {
 			Args:        []ArgSpec{},
 		},
 		{
+			Name:        "Hexdump",
+			Description: "Display text as hexdump with offsets and ASCII",
+			Func:        hexdump,
+			Args:        []ArgSpec{},
+		},
+		{
 			Name:        "ROT13",
 			Description: "Apply ROT13 cipher to text",
 			Func:        rot13,
@@ -2143,6 +2149,49 @@ func hexDecode(input, arg1, arg2 string) string {
 		return input
 	}
 	return string(decoded)
+}
+
+// hexdump displays text as hexdump with offsets and ASCII representation
+func hexdump(input, arg1, arg2 string) string {
+	data := []byte(input)
+	var result strings.Builder
+	const bytesPerLine = 16
+
+	for offset := 0; offset < len(data); offset += bytesPerLine {
+		// Write offset
+		result.WriteString(fmt.Sprintf("%08x: ", offset))
+
+		// Write hex bytes
+		for i := 0; i < bytesPerLine; i++ {
+			if offset+i < len(data) {
+				result.WriteString(fmt.Sprintf("%02x", data[offset+i]))
+			} else {
+				result.WriteString("  ")
+			}
+			// Add space after every 2 bytes
+			if i%2 == 1 {
+				result.WriteString(" ")
+			}
+		}
+
+		// Write ASCII representation
+		result.WriteString(" ")
+		for i := 0; i < bytesPerLine && offset+i < len(data); i++ {
+			b := data[offset+i]
+			if b >= 32 && b <= 126 {
+				result.WriteByte(b)
+			} else {
+				result.WriteByte('.')
+			}
+		}
+
+		// Add newline unless it's the last line
+		if offset+bytesPerLine < len(data) {
+			result.WriteString("\n")
+		}
+	}
+
+	return result.String()
 }
 
 // rot13 applies ROT13 cipher
